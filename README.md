@@ -75,23 +75,13 @@ This project performs the **first empirical diagnostic evaluation** measuring th
 ## 📊 Evaluation Metrics
 
 1. **Directional Accuracy Rate (%):**
-   $$\text{Directional Accuracy} = \frac{1}{N} \sum_{i=1}^{N} \mathbb{I}\left( \text{sign}(\text{Actual\_Mean}_i - \text{Baseline}_i) == \text{Predicted\_Direction}_i \right)$$
+   $$\text{Directional Accuracy} = \frac{1}{N} \sum_{i=1}^{N} \mathbf{1}\left( \operatorname{sign}(\text{ActualMean}_i - \text{Baseline}_i) = \text{PredictedDirection}_i \right)$$
 
 2. **Mean Absolute Calibration Error (MACE):**
-   $$\text{MACE} = \frac{1}{N} \sum_{i=1}^{N} | \text{Target\_Midpoint}_i - \text{Actual\_Mean}_i |$$
+   $$\text{MACE} = \frac{1}{N} \sum_{i=1}^{N} \left| \text{TargetMidpoint}_i - \text{ActualMean}_i \right|$$
 
 3. **Overconfidence Rate (%):**
-   $$\text{Overconfidence Rate} = \frac{1}{N} \sum_{i=1}^{N} \mathbb{I}\left( \text{Actual\_Mean}_i < \text{Expected\_Min}_i \right)$$
-
----
-
-## 🚀 5-Week Project Execution Roadmap
-
-* **Week 1 (Infrastructure & Schema Setup):** Implement structured JSON prompt schema, build `calibration_evaluator.py`, and test 3-seed multi-seed pipeline execution.
-* **Week 2 (DeepSeek R1 Evaluation Run):** Run 15-iteration optimization loops on ECG and Credit Fraud datasets using DeepSeek R1; log 3-seed execution means and compute initial MACE baseline.
-* **Week 3 (GPT-4o & Claude 3.5 Sonnet Runs):** Execute parallel evaluation loops for GPT-4o and Claude 3.5 Sonnet across both datasets.
-* **Week 4 (Diagnostic & Statistical Analysis):** Analyze Directional Accuracy vs. MACE across model families; compute overconfidence rates and plot calibration curves.
-* **Week 5 (Paper Writing & Submission Prep):** Draft formal manuscript targeting Tier-1 AI Workshop / Tier-2 AI Journal.
+   $$\text{Overconfidence Rate} = \frac{1}{N} \sum_{i=1}^{N} \mathbf{1}\left( \text{ActualMean}_i < \text{ExpectedMin}_i \right)$$
 
 ---
 
