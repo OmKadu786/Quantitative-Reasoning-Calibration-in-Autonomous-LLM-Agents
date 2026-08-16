@@ -18,7 +18,7 @@ This project performs the **first empirical diagnostic evaluation** measuring th
 
 | Research Area | Key Paper | What They Evaluated | **What OUR Project Evaluates** |
 |---|---|---|---|
-| **Atomic Factual Calibration** | Kadavath et al. *(Anthropic, 2022)* | Single-turn true/false trivia confidence ($P(\text{True})$) | **Continuous metric range calibration ($\Delta \text{F1}$, $\Delta \text{Recall}$)** |
+| **Atomic Factual Calibration** | Kadavath et al. *(Anthropic, 2022)* | Single-turn true/false trivia confidence P(True) | **Continuous metric range calibration (ΔF1, ΔRecall)** |
 | **In-Advance Overconfidence** | Barkan et al. *(NeurIPS 2025 WS, arXiv:2512.24661)* | In-advance confidence vs. static code pass/fail | **Iterative parameter prediction vs. 3-seed execution mean** |
 | **Knowing-Doing Gap** | Wang *(MIRROR, arXiv:2604.19809)* | Discrete action choices (opt-out vs. tool call) | **Quantitative numeric reasoning in dynamic ML search loops** |
 | **Autonomous Agent HPO** | AgentHPO *(CPAL 2025)* & OPRO *(ICLR 2024)* | Final test set accuracy of ML models | **Evaluates calibration of the agent's internal reasoning text** |
@@ -75,7 +75,7 @@ This project performs the **first empirical diagnostic evaluation** measuring th
 ## 📊 Evaluation Metrics
 
 1. **Directional Accuracy Rate (%):**
-   $$\text{Directional Accuracy} = \frac{1}{N} \sum_{i=1}^{N} \mathbf{1}\left( \operatorname{sign}(\text{ActualMean}_i - \text{Baseline}_i) = \text{PredictedDirection}_i \right)$$
+   $$\text{Directional Accuracy} = \frac{1}{N} \sum_{i=1}^{N} \mathbf{1}\left( \text{sign}(\text{ActualMean}_i - \text{Baseline}_i) = \text{PredictedDirection}_i \right)$$
 
 2. **Mean Absolute Calibration Error (MACE):**
    $$\text{MACE} = \frac{1}{N} \sum_{i=1}^{N} \left| \text{TargetMidpoint}_i - \text{ActualMean}_i \right|$$
