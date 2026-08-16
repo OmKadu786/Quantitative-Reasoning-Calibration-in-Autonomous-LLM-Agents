@@ -1,0 +1,65 @@
+================================================================================
+RESEARCH PROPOSAL: QUANTITATIVE REASONING CALIBRATION IN AUTONOMOUS LLM AGENTS
+================================================================================
+
+TITLE:
+Do LLMs Mean What They Say? Evaluating Quantitative Reasoning Calibration 
+in Autonomous LLM Agents
+
+AUTHOR: Om Kadu
+DATE: August 2026
+TARGET VENUE: Tier-1 AI Workshop / Tier-2 AI Journal (e.g., NeurIPS/ICLR Agentic AI)
+
+--------------------------------------------------------------------------------
+1. EXECUTIVE SUMMARY
+--------------------------------------------------------------------------------
+Autonomous LLM agents (such as AgentHPO and AIDE) are increasingly deployed 
+to optimize machine learning pipelines. When proposing code or parameter updates, 
+agents generate Chain-of-Thought (CoT) explanations predicting expected metric 
+shifts. 
+
+While prior literature evaluates static factual calibration (Kadavath et al.), 
+in-advance task overconfidence (Barkan et al.), and discrete action choice gaps 
+(Wang, MIRROR 2026), NO prior benchmark evaluates continuous quantitative metric 
+calibration during iterative ML pipeline optimization.
+
+This study conducts a rigorous empirical audit measuring the gap between an agent's 
+predicted quantitative metrics (delta Recall, delta F1) and actual 3-seed downstream 
+execution means across 180 evaluation trials.
+
+--------------------------------------------------------------------------------
+2. RESEARCH QUESTIONS
+--------------------------------------------------------------------------------
+- RQ1 (Directional Accuracy): How frequently does the empirical 3-seed mean 
+  match the agent's predicted metric shift direction (UP, DOWN, STABLE)?
+- RQ2 (Magnitude Calibration Error - MACE): What is the Mean Absolute Calibration 
+  Error between the agent's target range midpoint and the 3-seed execution mean?
+- RQ3 (Cross-Model Comparison): How do open-weights reasoning models (DeepSeek R1) 
+  compare against proprietary models (GPT-4o, Claude 3.5 Sonnet) in calibration error?
+
+--------------------------------------------------------------------------------
+3. EXPERIMENTAL SETUP & METHODOLOGY
+--------------------------------------------------------------------------------
+- Evaluated Models (3): DeepSeek R1, GPT-4o, Claude 3.5 Sonnet.
+- Imbalanced Domains (2):
+    1. MIT-BIH Arrhythmia ECG (5-class cardiology signal classification)
+    2. Kaggle Credit Card Fraud (Binary heavily imbalanced financial data)
+- Deterministic Extraction: Mandatory JSON Schema (direction, expected_min, expected_max).
+- 3-Seed Execution Averaging: Evaluated across 3 distinct seeds ([42, 123, 999]) 
+  to isolate agent miscalibration from stochastic training variance.
+- Total Sample Size: 2 datasets x 3 models x 15 iterations x 3 seeds = 180 trials.
+
+--------------------------------------------------------------------------------
+4. EVALUATION METRICS
+--------------------------------------------------------------------------------
+1. Directional Accuracy Rate (%): Matches sign(Actual_Mean - Baseline) to Predicted_Direction.
+2. Mean Absolute Calibration Error (MACE): Average gap between target midpoint and 3-seed mean.
+3. Overconfidence Rate (%): Percentage of trials where Actual_Mean < Expected_Min.
+
+--------------------------------------------------------------------------------
+5. PRACTICAL FIELD IMPACT
+--------------------------------------------------------------------------------
+1. AI Safety: Establishes a verification design rule for autonomous biomedical AI labs.
+2. Compute Savings: Enables GPU compute savings by using calibrated CoT pre-filters.
+3. Model Selection: First benchmark guiding AI engineers on which model has the 
+   most grounded optimization reasoning.
