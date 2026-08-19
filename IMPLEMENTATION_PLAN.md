@@ -29,7 +29,14 @@
  │  - Predictions: {macro_f1, recall_minority1, recall_minority2}         │
  │  - Fields: {direction: UP|DOWN|STABLE, expected_min, expected_max}     │
  └────────────────────────────────────┬────────────────────────────────────┘
-                                      │ Config Parameters
+                                      │ Proposed Hyperparameters
+                                      ▼
+ ┌─────────────────────────────────────────────────────────────────────────┐
+ │       Architectural Calibration Guard (quarcaa/harness/architectural_guard.py)│
+ │  - Audits Interval Width (Sharpness) & Rolling MACE                     │
+ │  - Gates / Clamps Overconfident Parameter Updates                       │
+ └────────────────────────────────────┬────────────────────────────────────┘
+                                      │ Approved / Gated Hyperparameters
                                       ▼
  ┌─────────────────────────────────────────────────────────────────────────┐
  │            QuaRCAA 3-Seed Multi-Seed Harness + Retry Handler            │
@@ -56,6 +63,7 @@
 Quantitative Reasoning Calibration in Autonomous LLM Agents/
 ├── README.md                          # Research overview & literature comparison
 ├── IMPLEMENTATION_PLAN.md             # System implementation architecture document
+├── ROADMAP_PHASED_STRATEGY.md         # Phased UTP vs Stage 2 expansion plan
 ├── proposal.txt                       # Executive research proposal summary
 ├── requirements.txt                   # Dependency specifications
 ├── configs/
@@ -81,8 +89,9 @@ Quantitative Reasoning Calibration in Autonomous LLM Agents/
     │   ├── base_pipeline.py           # Pipeline Interface
     │   ├── ecg_pipeline.py            # MIT-BIH Arrhythmia Inter-Patient Pipeline
     │   └── credit_pipeline.py         # Kaggle Credit Card Fraud Imbalanced Pipeline
-    ├── harness/                       # Execution & Retry Engine
+    ├── harness/                       # Execution, Retry & Architectural Guard
     │   ├── __init__.py
+    │   ├── architectural_guard.py    # MIRROR C4-inspired Architectural Calibration Guard
     │   ├── retry_handler.py           # Exponential backoff decorator (429/500/timeouts)
     │   └── multi_seed_runner.py       # 3-Seed ([42, 123, 999]) Execution Engine
     └── metrics/                       # Calibration Diagnostic Engine
@@ -108,45 +117,37 @@ $$\text{Directional Accuracy} = \frac{1}{N} \sum_{i=1}^{N} \mathbf{1}\left( \tex
 
 ### 3.3 Prediction Interval Sharpness (Interval Width)
 $$\text{Sharpness} = \frac{1}{N} \sum_{i=1}^{N} \left( \text{ExpectedMax}_i - \text{ExpectedMin}_i \right)$$
-* Prevents agents from hedging calibration metrics by outputting artificially wide confidence ranges.
 
 ### 3.4 Overconfidence Rate (%)
 $$\text{Overconfidence Rate} = \frac{1}{N} \sum_{i=1}^{N} \mathbf{1}\left( \mu_i < \text{ExpectedMin}_i \right)$$
 
 ---
 
-## 🛠️ 4. Core Module Implementation Specifications
+## 🛠️ 4. Architectural Calibration Guard Specification (`quarcaa/harness/architectural_guard.py`)
 
-### 4.1 Byte-Identical Prompt Template (`quarcaa/prompts/template.py`)
-Guarantees identical wording across all provider calls:
+Inspired by MIRROR's C4 finding (where external architectural constraints yielded a 76% error reduction compared to zero-effect epistemic self-knowledge), the **Architectural Calibration Guard** inspects agent predictions before code execution:
+
 ```python
-SYSTEM_PROMPT_TEMPLATE = """
-You are an Autonomous AI ML Experimenter optimizing an imbalanced classification pipeline.
-Analyze the current iteration results and recommend calibrated parameters.
+class ArchitecturalGuard:
+    def __init__(self, max_interval_width: float = 0.25, max_rolling_mace: float = 0.15):
+        self.max_width = max_interval_width
+        self.max_mace = max_rolling_mace
 
-Along with your Chain-of-Thought reasoning, you MUST output a JSON block matching this schema:
-{
-  "proposed_parameters": {"shield_threshold": float, "f_weight": float, "s_weight": float},
-  "predictions": {
-    "macro_f1": {"direction": "UP"|"DOWN"|"STABLE", "expected_min": float, "expected_max": float},
-    "recall_F": {"direction": "UP"|"DOWN"|"STABLE", "expected_min": float, "expected_max": float},
-    "recall_S": {"direction": "UP"|"DOWN"|"STABLE", "expected_min": float, "expected_max": float}
-  }
-}
-"""
+    def evaluate_proposal(self, proposed_params: dict, predictions: dict, rolling_mace: float) -> dict:
+        # If interval width is excessively vague or past calibration error is high, damp parameter shift
+        is_vague = any((p["expected_max"] - p["expected_min"]) > self.max_width for p in predictions.values())
+        if is_vague or rolling_mace > self.max_mace:
+            return self.clamp_parameters(proposed_params)
+        return proposed_params
 ```
-
-### 4.2 Retry & Rate-Limit Handler (`quarcaa/harness/retry_handler.py`)
-Decorates API calls with exponential backoff to handle 429 rate limits and 500 timeouts cleanly without corrupting multi-seed execution state.
 
 ---
 
 ## 🚦 5. Staged Execution Plan (Sample Size & Compute Arithmetic)
 
-### Trial & Execution Arithmetic Breakdown:
-* **90 Primary Experimental Units:** 3 models × 2 datasets × 15 iterations. (Primary unit of prediction analysis)
-* **270 Model Training Executions:** 90 experimental units × 3 seeds (`[42, 123, 999]`). (Pipeline training runs)
-* **270 Calibration Observations:** 90 experimental units × 3 evaluated metrics per iteration. (Calibration dataset size)
+* **90 Primary Experimental Units:** 3 models × 2 datasets × 15 iterations.
+* **270 Model Training Executions:** 90 experimental units × 3 seeds (`[42, 123, 999]`).
+* **270 Calibration Observations:** 90 experimental units × 3 evaluated metrics per iteration.
 
 | Phase | Target Model | Model Architecture & Reasoning Axis | Experimental Units | Pipeline Runs (3-Seed) | Calibration Obs (3-Metric) | Milestone |
 |---|---|---|---|---|---|---|
@@ -159,7 +160,5 @@ Decorates API calls with exponential backoff to handle 429 rate limits and 500 t
 
 ## 📋 6. Next Steps for Execution
 
-1. **Implement `quarcaa/prompts/template.py`**: Byte-identical prompt manager.
-2. **Implement `quarcaa/metrics/sharpness.py` & `directional_accuracy.py`**: Add interval width and explicit baseline tracking.
-3. **Implement `quarcaa/harness/retry_handler.py`**: Exponential backoff wrapper.
-4. **Trigger Phase 1 DeepSeek R1 Execution**: Run 15 iterations on ECG and Credit Fraud pipelines.
+1. **Implement `quarcaa/harness/architectural_guard.py`**: Local C4 architectural gating module.
+2. **Run Stage 1 Phase 1 Execution**: Trigger DeepSeek R1 on MIT-BIH ECG pipeline for 15 iterations.

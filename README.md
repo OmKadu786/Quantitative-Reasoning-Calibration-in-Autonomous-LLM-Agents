@@ -18,8 +18,8 @@ This project performs the **first empirical diagnostic evaluation** measuring th
 | Research Area | Key Paper | What They Evaluated | **What OUR Project Evaluates** |
 |---|---|---|---|
 | **Atomic Factual Calibration** | Kadavath et al. *(Anthropic, 2022, arXiv:2207.05221)* | Multiple-choice probability P(True) / P(IK) across TriviaQA, MMLU & arithmetic | **Continuous metric range calibration (ΔF1, ΔRecall)** |
-| **Agentic Capability Overconfidence** | Barkan et al. *(2025, arXiv:2512.24661)* | Self-predicted task completion success in multi-step agentic workflows | **Iterative parameter prediction vs. 3-seed execution mean** |
-| **Knowing-Doing Gap** | Wang *(MIRROR, 2026, arXiv:2604.19809)* | Discrete action choices (opt-out vs. tool call) | **Quantitative numeric reasoning in dynamic ML search loops** |
+| **Agentic Capability Overconfidence** | Barkan et al. *(NeurIPS 2024 Workshop on Metacognition)* | Self-predicted task completion success in multi-step agentic workflows | **Iterative parameter prediction vs. 3-seed execution mean** |
+| **Knowing-Doing Gap & Mitigation** | Wang et al. *(MIRROR, 2026, arXiv:2604.19809)* | Evaluated C2 (epistemic self-knowledge) vs. C4 (architectural constraint) | **Extends C4 Architectural Gating to continuous quantitative AutoML search** |
 | **Autonomous Agent HPO** | AgentHPO *(Zheng et al., 2024)* & OPRO *(Yang et al., 2024)* | Evaluates final target ML model test set performance only | **Audits calibration & overconfidence of agent's internal reasoning text** |
 
 ---
@@ -34,10 +34,17 @@ This project performs the **first empirical diagnostic evaluation** measuring th
                                                       │
                                                       ▼
                                ┌──────────────────────────────────────────────┐
-                               │        Deterministic JSON Schema             │
+                               │  Structured Elicitation (Kadavath-style)     │
                                │  - Proposed Hyperparameters                  │
                                │  - Predicted Direction (UP / DOWN / STABLE)  │
                                │  - Expected Range [min, max]                 │
+                               └──────────────────────┬───────────────────────┘
+                                                      │
+                                                      ▼
+                               ┌──────────────────────────────────────────────┐
+                               │ Architectural Calibration Guard (C4-inspired)│
+                               │  - Audits Interval Width & Rolling MACE      │
+                               │  - Gates Overconfident Agent Updates         │
                                └──────────────────────┬───────────────────────┘
                                                       │
                                                       ▼
@@ -86,15 +93,17 @@ To avoid confusion between experimental units, compute budget, and evaluation sa
 
 3. **Prediction Interval Sharpness (Interval Width):**
    $$\text{Sharpness} = \frac{1}{N} \sum_{i=1}^{N} \left( \text{ExpectedMax}_i - \text{ExpectedMin}_i \right)$$
-   *(Ensures models cannot artificially inflate calibration by predicting excessively wide confidence ranges.)*
 
 4. **Overconfidence Rate (%):**
    $$\text{Overconfidence Rate} = \frac{1}{N} \sum_{i=1}^{N} \mathbf{1}\left( \text{ActualMean}_i < \text{ExpectedMin}_i \right)$$
+
+5. **C4 Architectural Calibration Guard Effectiveness:**
+   Evaluates error reduction rate when an external architectural policy clamps or rejects overconfident agent parameter changes prior to execution.
 
 ---
 
 ## 💡 Practical Field Impact
 
-1. **Empirical Grounding for Verification:** Provides empirical evidence quantifying when AI developers can safely trust an agent's self-reported reasoning versus when hard software verification filters are required.
-2. **Compute Savings Potential:** Informs future early-stopping pre-filter mechanisms to prune overconfident agent proposals before running long training jobs.
+1. **Architectural Safety Filters:** Demonstrates how external architectural gating (C4) prevents uncalibrated autonomous agents from deploying harmful model updates.
+2. **Compute Savings Potential:** Informs early-stopping pre-filter mechanisms to prune ungrounded agent proposals before running expensive GPU training jobs.
 3. **Model Selection Insights:** Offers empirical benchmark data guiding AI system engineers on model family selection for grounded autonomous optimization reasoning.

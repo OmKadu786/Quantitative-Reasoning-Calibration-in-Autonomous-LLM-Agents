@@ -23,8 +23,9 @@
  │                     STAGE 2: Mitigation & Tier-1 Upgrade                    │
  │               (Post-UTP / Top AI Workshop & Journal Submission)             │
  ├─────────────────────────────────────────────────────────────────────────────┤
- │ 1. Intervention Experiment: In-Context Self-Calibration Prompting           │
- │    (Feeds past [Prediction vs. 3-Seed Actual] history back into CoT prompt) │
+ │ 1. Architectural Calibration Guard (MIRROR C4-inspired Intervention):       │
+ │    (External policy gating/clamping agent updates when predicted range     │
+ │     width is excessively wide or rolling MACE > threshold)                  │
  │ 2. Balanced 2x2 Model Matrix: Adds o3-mini / Gemini 2.5 Flash Thinking      │
  │    (2 Trained Extended Reasoning vs. 2 Prompted Step-by-Step Models)       │
  │ 3. Longitudinal Calibration Drift (3-6 Month re-evaluation of API drift)   │
@@ -35,11 +36,12 @@
 
 ## 🔬 2. Stage 2 High-Leverage Upgrades Detailed
 
-### 2.1 Mitigation Experiment: In-Context Self-Calibration Prompting
-* **The Core Research Question:** *Can LLM agents learn to self-correct their quantitative forecasting within an optimization session when shown their own past calibration errors?*
-* **Implementation:** At iteration $k$, the prompt injects a structured calibration feedback trace of iterations $1 \dots k-1$:
-  $$\text{Feedback}_i = \left\{ \text{Predicted Range: } [\text{Min}_i, \text{Max}_i], \text{ Actual 3-Seed Mean: } \mu_i, \text{ Gap: } \Delta_i \right\}$$
-* **Impact:** Transforms the paper from a purely descriptive benchmark into a **validated algorithmic intervention study**, significantly increasing review score strength.
+### 2.1 Mitigation Intervention: MIRROR C4-Inspired Architectural Calibration Guard
+* **Why Not Epistemic Self-Knowledge (C2)?** MIRROR (Wang et al., 2026) evaluated feeding calibration history back to agents (C2) across 16 models (~250K instances) and proved it has **no statistically significant effect** ($p=0.90$). Conversely, external architectural constraints (C4) yielded a **76% error reduction**.
+* **The Core Research Question:** *Does an external Architectural Calibration Guard (C4) that clamps/gates hyperparameter updates when the agent's predicted interval width is overly vague (high Sharpness) or rolling MACE is high significantly reduce pipeline failure rates?*
+* **Implementation (`quarcaa/harness/architectural_guard.py`):**
+  $$\text{Action} = \begin{cases} \text{Execute } \theta_{\text{proposed}} & \text{if Sharpness} \le \tau_{\text{width}} \text{ and Rolling MACE} \le \tau_{\text{mace}} \\ \text{Damp/Reject Update} & \text{otherwise} \end{cases}$$
+* **Impact:** Evaluates the one intervention paradigm proven to work in literature (C4 architectural constraint) within dynamic AutoML optimization loops.
 
 ### 2.2 Balanced 2×2 Model Architecture Matrix
 To resolve the $n=1 \text{ vs. } n=2$ reasoning model limitation, Stage 2 expands the model matrix to a balanced $2 \times 2$ grid:
@@ -58,4 +60,4 @@ To resolve the $n=1 \text{ vs. } n=2$ reasoning model limitation, Stage 2 expand
 ## 🚦 3. Immediate Action Plan
 
 1. **Lock Stage 1 Execution:** Complete the 90 experimental unit execution across DeepSeek R1, GPT-4o, and Claude 3.5 Sonnet on ECG & Credit Card Fraud.
-2. **Modular Architecture Readiness:** Include stub interfaces in `quarcaa/prompts/few_shot_calibration.py` to seamlessly enable Stage 2 self-calibration prompting without refactoring codebase.
+2. **Architectural Guard Module:** Implement `quarcaa/harness/architectural_guard.py` to support the C4 architectural gating mechanism.
