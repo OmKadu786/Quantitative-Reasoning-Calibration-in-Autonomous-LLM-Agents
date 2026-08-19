@@ -12,15 +12,16 @@ DATE: August 2026
 --------------------------------------------------------------------------------
 1. EXECUTIVE SUMMARY
 --------------------------------------------------------------------------------
-Autonomous LLM agents (such as AgentHPO and AIDE) are increasingly deployed 
-to optimize machine learning pipelines. When proposing code or parameter updates, 
-agents generate Chain-of-Thought (CoT) explanations predicting expected metric 
-shifts. 
+Autonomous LLM agents (such as AgentHPO, Zheng et al., 2024; and OPRO, Yang et al., 2024) 
+are increasingly deployed to optimize machine learning pipelines. When proposing code 
+or parameter updates, agents generate Chain-of-Thought (CoT) explanations predicting 
+expected metric shifts. 
 
-While prior literature evaluates static factual calibration (Kadavath et al.), 
-in-advance task overconfidence (Barkan et al.), and discrete action choice gaps 
-(Wang, MIRROR 2026), NO prior benchmark evaluates continuous quantitative metric 
-calibration during iterative ML pipeline optimization.
+While prior literature evaluates static multiple-choice factual calibration (Kadavath 
+et al., Anthropic 2022, arXiv:2207.05221), task capability overconfidence in multi-step 
+agents (Barkan et al., 2025, arXiv:2512.24661), and discrete action choice gaps 
+(Wang, MIRROR 2026, arXiv:2604.19809), NO prior benchmark evaluates continuous 
+quantitative metric calibration during iterative ML pipeline optimization.
 
 This study conducts a rigorous empirical audit measuring the gap between an agent's 
 predicted quantitative metrics (delta Recall, delta F1) and actual 3-seed downstream 

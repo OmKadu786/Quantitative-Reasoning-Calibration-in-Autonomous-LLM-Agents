@@ -17,10 +17,10 @@ This project performs the **first empirical diagnostic evaluation** measuring th
 
 | Research Area | Key Paper | What They Evaluated | **What OUR Project Evaluates** |
 |---|---|---|---|
-| **Atomic Factual Calibration** | Kadavath et al. *(Anthropic, 2022)* | Single-turn true/false trivia confidence P(True) | **Continuous metric range calibration (ΔF1, ΔRecall)** |
-| **In-Advance Overconfidence** | Barkan et al. *(NeurIPS 2025 WS, arXiv:2512.24661)* | In-advance confidence vs. static code pass/fail | **Iterative parameter prediction vs. 3-seed execution mean** |
-| **Knowing-Doing Gap** | Wang *(MIRROR, arXiv:2604.19809)* | Discrete action choices (opt-out vs. tool call) | **Quantitative numeric reasoning in dynamic ML search loops** |
-| **Autonomous Agent HPO** | AgentHPO *(CPAL 2025)* & OPRO *(ICLR 2024)* | Final test set accuracy of ML models | **Evaluates calibration of the agent's internal reasoning text** |
+| **Atomic Factual Calibration** | Kadavath et al. *(Anthropic, 2022, arXiv:2207.05221)* | Multiple-choice probability P(True) / P(IK) across TriviaQA, MMLU & arithmetic | **Continuous metric range calibration (ΔF1, ΔRecall)** |
+| **Agentic Capability Overconfidence** | Barkan et al. *(2025, arXiv:2512.24661)* | Self-predicted task completion success in multi-step agentic workflows | **Iterative parameter prediction vs. 3-seed execution mean** |
+| **Knowing-Doing Gap** | Wang *(MIRROR, 2026, arXiv:2604.19809)* | Discrete action choices (opt-out vs. tool call) | **Quantitative numeric reasoning in dynamic ML search loops** |
+| **Autonomous Agent HPO** | AgentHPO *(Zheng et al., 2024)* & OPRO *(Yang et al., 2024)* | Evaluates final target ML model test set performance only | **Audits calibration & overconfidence of agent's internal reasoning text** |
 
 ---
 
