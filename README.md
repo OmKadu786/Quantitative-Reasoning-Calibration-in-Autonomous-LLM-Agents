@@ -1,8 +1,7 @@
 # 🔬 Empirical Evaluation of Quantitative Reasoning Calibration in Autonomous LLM Agents
 
 **Title:** Do LLMs Mean What They Say? Evaluating Quantitative Reasoning Calibration in Autonomous LLM Agents  
-**Location:** `/Users/omkadu/code/UTP/confidence/`  
-**Timeline:** 5-Week Empirical Benchmark Plan  
+**Location:** `/Users/omkadu/code/UTP/Quantitative Reasoning Calibration in Autonomous LLM Agents/`  
 
 ---
 
@@ -52,23 +51,27 @@ This project performs the **first empirical diagnostic evaluation** measuring th
                                │        Calibration Audit Engine              │
                                │  - Directional Accuracy Rate (%)             │
                                │  - Mean Absolute Calibration Error (MACE)    │
+                               │  - Prediction Interval Sharpness             │
                                │  - Overconfidence Rate (%)                   │
                                └──────────────────────────────────────────────┘
 ```
 
-### 1. Evaluated Models (3 Models)
-1. **DeepSeek R1** (Open-weights reasoning model)
-2. **GPT-4o** (Proprietary general model)
-3. **Claude 3.5 Sonnet** (Proprietary coding/reasoning model)
+### 1. Evaluated Models & Dual-Axis Framing (3 Models)
+1. **DeepSeek R1** (Open-weights, trained extended reasoning model)
+2. **GPT-4o** (Proprietary, instruction-tuned prompted reasoning model)
+3. **Claude 3.5 Sonnet** (Proprietary, instruction-tuned prompted reasoning model)
+
+*Note on Model Axis:* DeepSeek R1 employs trained extended reasoning (internal CoT mechanism), whereas GPT-4o and Claude 3.5 Sonnet rely on prompted step-by-step reasoning. Model comparisons explore both the open/proprietary and reasoning-mechanism axes.
 
 ### 2. Imbalanced Benchmark Domains (2 Datasets)
 1. **MIT-BIH Arrhythmia (ECG):** Cardiology signal classification under canonical de Chazal inter-patient split (5-class imbalanced).
 2. **Kaggle Credit Card Fraud:** Financial fraud detection (binary heavily imbalanced dataset).
 
-### 3. Multi-Seed & Noise Control Protocol
-* **JSON Schema Enforcement:** Every model must output a structured JSON block (`direction`, `expected_min`, `expected_max`) alongside CoT text.
-* **3-Seed Execution Averaging:** Every proposed configuration is evaluated across **3 random seeds** (`[42, 123, 999]`) to separate true agent miscalibration from stochastic training variance.
-* **Total Sample Size:** 2 datasets × 3 models × 15 iterations × 3 seeds = **180 total multi-seed trials**.
+### 3. Sample Size & Execution Breakdown
+To avoid confusion between experimental units, compute budget, and evaluation sample size:
+* **90 Experimental Units:** 3 models × 2 datasets × 15 iterations. (Primary prediction sample unit)
+* **270 Model Training Executions:** 90 units × 3 seeds (`[42, 123, 999]`). (Pipeline training compute runs)
+* **270 Calibration Observations:** 90 units × 3 evaluated metrics per iteration (`macro_f1`, `recall_F`, `recall_S`). (Statistical calibration sample)
 
 ---
 
@@ -76,17 +79,22 @@ This project performs the **first empirical diagnostic evaluation** measuring th
 
 1. **Directional Accuracy Rate (%):**
    $$\text{Directional Accuracy} = \frac{1}{N} \sum_{i=1}^{N} \mathbf{1}\left( \text{sign}(\text{ActualMean}_i - \text{Baseline}_i) = \text{PredictedDirection}_i \right)$$
+   *(Where $\text{Baseline}_1$ is the pre-agent vanilla pipeline 3-seed mean, and $\text{Baseline}_i$ for $i > 1$ is the empirical 3-seed mean of iteration $i-1$.)*
 
 2. **Mean Absolute Calibration Error (MACE):**
    $$\text{MACE} = \frac{1}{N} \sum_{i=1}^{N} \left| \text{TargetMidpoint}_i - \text{ActualMean}_i \right|$$
 
-3. **Overconfidence Rate (%):**
+3. **Prediction Interval Sharpness (Interval Width):**
+   $$\text{Sharpness} = \frac{1}{N} \sum_{i=1}^{N} \left( \text{ExpectedMax}_i - \text{ExpectedMin}_i \right)$$
+   *(Ensures models cannot artificially inflate calibration by predicting excessively wide confidence ranges.)*
+
+4. **Overconfidence Rate (%):**
    $$\text{Overconfidence Rate} = \frac{1}{N} \sum_{i=1}^{N} \mathbf{1}\left( \text{ActualMean}_i < \text{ExpectedMin}_i \right)$$
 
 ---
 
-## 💡 Practical Real-World Impact
+## 💡 Practical Field Impact
 
-1. **Solving the Automation Dilemma:** Quantifies empirically when AI developers can safely trust an agent's self-reported reasoning vs. when manual verification is required.
-2. **GPU Cloud Compute Savings:** Enables early-stopping pre-filters that reject overconfident agent proposals before running long, expensive training jobs.
-3. **AI Safety Rule for Biomedical ML:** Establishes a verification rule preventing autonomous clinical AI agents from deploying ungrounded model updates.
+1. **Empirical Grounding for Verification:** Provides empirical evidence quantifying when AI developers can safely trust an agent's self-reported reasoning versus when hard software verification filters are required.
+2. **Compute Savings Potential:** Informs future early-stopping pre-filter mechanisms to prune overconfident agent proposals before running long training jobs.
+3. **Model Selection Insights:** Offers empirical benchmark data guiding AI system engineers on model family selection for grounded autonomous optimization reasoning.

@@ -8,7 +8,6 @@ in Autonomous LLM Agents
 
 AUTHOR: Om Kadu
 DATE: August 2026
-TARGET VENUE: Tier-1 AI Workshop / Tier-2 AI Journal (e.g., NeurIPS/ICLR Agentic AI)
 
 --------------------------------------------------------------------------------
 1. EXECUTIVE SUMMARY
@@ -25,17 +24,22 @@ calibration during iterative ML pipeline optimization.
 
 This study conducts a rigorous empirical audit measuring the gap between an agent's 
 predicted quantitative metrics (delta Recall, delta F1) and actual 3-seed downstream 
-execution means across 180 evaluation trials.
+execution means across 90 experimental units.
 
 --------------------------------------------------------------------------------
 2. RESEARCH QUESTIONS
 --------------------------------------------------------------------------------
 - RQ1 (Directional Accuracy): How frequently does the empirical 3-seed mean 
   match the agent's predicted metric shift direction (UP, DOWN, STABLE)?
-- RQ2 (Magnitude Calibration Error - MACE): What is the Mean Absolute Calibration 
-  Error between the agent's target range midpoint and the 3-seed execution mean?
+- RQ2 (Magnitude Calibration Error - MACE & Sharpness): What is the Mean Absolute 
+  Calibration Error between the agent's target range midpoint and the 3-seed 
+  execution mean, and how wide are predicted confidence intervals (Sharpness)?
 - RQ3 (Cross-Model Comparison): How do open-weights reasoning models (DeepSeek R1) 
   compare against proprietary models (GPT-4o, Claude 3.5 Sonnet) in calibration error?
+  [Note: DeepSeek R1 employs trained extended reasoning, while GPT-4o and Claude 3.5 
+  Sonnet rely on prompted step-by-step reasoning without a dedicated extended-thinking 
+  mechanism; RQ3 is evaluated as an exploratory analysis across both open/proprietary 
+  and reasoning-mechanism axes, which are not independently varied in this design.]
 
 --------------------------------------------------------------------------------
 3. EXPERIMENTAL SETUP & METHODOLOGY
@@ -47,19 +51,28 @@ execution means across 180 evaluation trials.
 - Deterministic Extraction: Mandatory JSON Schema (direction, expected_min, expected_max).
 - 3-Seed Execution Averaging: Evaluated across 3 distinct seeds ([42, 123, 999]) 
   to isolate agent miscalibration from stochastic training variance.
-- Total Sample Size: 2 datasets x 3 models x 15 iterations x 3 seeds = 180 trials.
+- Explicit Trial & Observation Counts:
+    * 90 Experimental Units: 3 models x 2 datasets x 15 iterations. (Primary sample unit)
+    * 270 Model Training Executions: 90 units x 3 seeds. (Compute budget / pipeline runs)
+    * 270 Calibration Observations: 90 units x 3 evaluated metrics per iteration 
+      (macro_f1, recall_minority1, recall_minority2). (Statistical calibration sample)
 
 --------------------------------------------------------------------------------
 4. EVALUATION METRICS
 --------------------------------------------------------------------------------
-1. Directional Accuracy Rate (%): Matches sign(Actual_Mean - Baseline) to Predicted_Direction.
+1. Directional Accuracy Rate (%): Matches sign(Actual_Mean_i - Baseline_i) to Predicted_Direction.
+   (Baseline_1 = pre-agent vanilla pipeline 3-seed mean; Baseline_i = iteration i-1 3-seed mean).
 2. Mean Absolute Calibration Error (MACE): Average gap between target midpoint and 3-seed mean.
-3. Overconfidence Rate (%): Percentage of trials where Actual_Mean < Expected_Min.
+3. Prediction Interval Sharpness: Average predicted range width (expected_max - expected_min), 
+   ensuring models cannot hedge calibration scores via artificially wide intervals.
+4. Overconfidence Rate (%): Percentage of trials where Actual_Mean < Expected_Min.
 
 --------------------------------------------------------------------------------
 5. PRACTICAL FIELD IMPACT
 --------------------------------------------------------------------------------
-1. AI Safety: Establishes a verification design rule for autonomous biomedical AI labs.
-2. Compute Savings: Enables GPU compute savings by using calibrated CoT pre-filters.
-3. Model Selection: First benchmark guiding AI engineers on which model has the 
-   most grounded optimization reasoning.
+1. AI Safety: Provides empirical grounding that could inform autonomous AI verification 
+   strategies in high-stakes domains (e.g., clinical biomedical AI).
+2. Compute Optimization: Provides empirical data on agent confidence reliability to inform 
+   future early-stopping pre-filter mechanisms for GPU compute savings.
+3. Model Selection: Offers benchmark data guiding AI engineers on model family selection 
+   for grounded autonomous optimization reasoning.
