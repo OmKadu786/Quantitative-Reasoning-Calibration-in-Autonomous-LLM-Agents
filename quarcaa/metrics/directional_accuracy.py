@@ -6,7 +6,13 @@ Explicit Baseline Definition:
 """
 from typing import Dict, Any
 
-def compute_directional_accuracy(predicted_direction: str, actual_3seed_mean: float, baseline_val: float, threshold: float = 0.001) -> bool:
+def compute_directional_accuracy(
+    predicted_direction: str, 
+    actual_3seed_mean: float, 
+    baseline_val: float, 
+    direction_threshold: float = 0.001,
+    stable_threshold: float = 0.01
+) -> bool:
     """
     Checks if predicted metric shift direction matches actual 3-seed execution mean shift.
     """
@@ -14,8 +20,9 @@ def compute_directional_accuracy(predicted_direction: str, actual_3seed_mean: fl
     pred_dir = predicted_direction.upper()
     
     if pred_dir == "UP":
-        return actual_delta > threshold
+        return actual_delta > direction_threshold
     elif pred_dir == "DOWN":
-        return actual_delta < -threshold
+        return actual_delta < -direction_threshold
     else: # STABLE
-        return abs(actual_delta) <= 0.01
+        return abs(actual_delta) <= stable_threshold
+

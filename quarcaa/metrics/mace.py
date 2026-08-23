@@ -37,8 +37,12 @@ def compute_quarcaa_calibration(
         # 2. Absolute Calibration Error (ACE)
         ace = abs(target_midpoint - actual_val)
         
-        # 3. Overconfidence Check (Actual fell short of expected minimum)
-        is_overconfident = actual_val < exp_min if pred_dir in ["UP", "STABLE"] else actual_val > exp_max
+        # 3. Overconfidence Check (Actual fell short of expected minimum for UP/STABLE, or exceeded expected maximum for DOWN)
+        if pred_dir == "DOWN":
+            is_overconfident = actual_val > exp_max
+        else:
+            is_overconfident = actual_val < exp_min
+
         
         results[metric_name] = {
             "predicted_direction": pred_dir,

@@ -1,0 +1,23 @@
+# MIT-BIH Arrhythmia ECG Dataset Configuration (Raw Un-tuned Baseline)
+dataset:
+  name: mitbih_ecg
+  split_protocol: de_chazal_inter_patient
+  num_classes: 5
+
+raw_untuned_baseline_defaults:
+  shield_threshold: 0.50
+  v_weight: 1.0
+  s_weight: 1.0
+  f_weight: 1.0
+  v_prob_multiplier: 1.00
+  s_prob_multiplier: 1.00
+  f_prob_multiplier: 1.00
+
+search_space_bounds:
+  shield_threshold: [0.30, 0.90]
+  v_weight: [1.0, 25.0]
+  s_weight: [1.0, 40.0]
+  f_weight: [1.0, 30.0]
+  v_prob_multiplier: [0.50, 3.00]
+  s_prob_multiplier: [0.50, 4.00]
+  f_prob_multiplier: [0.50, 3.00]

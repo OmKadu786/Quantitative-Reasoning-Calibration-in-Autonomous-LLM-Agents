@@ -1,0 +1,156 @@
+================================================================================
+QuaRCAA: QUANTITATIVE REASONING CALIBRATION IN AUTONOMOUS LLM AGENTS
+COMPLETE SYSTEM TECHNICAL SPECIFICATION & COMPONENT DOCUMENTATION
+================================================================================
+
+Target Workspace Path: /Users/omkadu/code/UTP/Quantitative Reasoning Calibration in Autonomous LLM Agents/
+Framework Name: QuaRCAA (Quantitative Reasoning Calibration in Autonomous Agents)
+Author: Om Kadu (UTP Research Attachment)
+Document Version: 2.0 (Peer-Review Audited Technical Reference)
+
+--------------------------------------------------------------------------------
+1. CORE RESEARCH OBJECTIVE & TWO-ARM EXPERIMENTAL ARCHITECTURE
+--------------------------------------------------------------------------------
+Autonomous Large Language Model (LLM) optimization agents (e.g., DeepSeek R1, GPT-4o, 
+Claude 3.5 Sonnet) generate natural language Chain-of-Thought (CoT) text recommending 
+hyperparameter changes to improve Machine Learning (ML) pipelines.
+
+Along with their proposed parameters, these agents output explicit numerical predictions 
+specifying the expected metric shift direction (UP, DOWN, STABLE) and a continuous 
+confidence interval [expected_min, expected_max] for downstream metrics.
+
+To prevent measurement confounding, QuaRCAA strictly splits execution into TWO DISJOINT ARMS:
+
+1.1 Primary Benchmark Arm (Arm 1 - Core Paper Diagnostic, 90/270/270 Protocol):
+- Pristine, unguarded evaluation loop.
+- No architectural guards, no parameter clamping, and no prompt interventions ever.
+- The LLM agent proposes hyperparameters theta_proposed; the 3-seed runner executes 
+  EXACTLY theta_proposed across seeds [42, 123, 999].
+- Calibration metrics (MACE, Directional Accuracy, Overconfidence) are calculated 
+  strictly comparing the prediction made for theta_proposed against the 3-seed mean mu_i 
+  produced by theta_proposed.
+- Sample Size: 90 Experimental Units (3 Models x 2 Datasets x 15 Iterations) / 
+  270 Model Training Runs / 270 Calibration Observations.
+
+1.2 Secondary Intervention Arm (Arm 2 - MIRROR-Style C4 Guard Outcome Study):
+- Separate execution loop run post-diagnostic.
+- Architectural Calibration Guard (C4-inspired) is active before training.
+- Evaluates outcome-level pipeline performance (final model accuracy, failure reduction rate, 
+  bad update rejection rate) comparing Guarded vs. Unguarded execution.
+- NEVER pooled into Arm 1 calibration statistics to prevent measurement corruption.
+
+--------------------------------------------------------------------------------
+2. HYPERPARAMETER PHYSICS & BASELINE DEFINITIONS
+--------------------------------------------------------------------------------
+Every optimization trajectory begins at RAW, UN-TUNED VANILLA BASELINE DEFAULTS 
+(Iteration 1 baseline) to avoid "Metric Saturation" (plateauing) and guarantee maximum 
+room for metric trajectories.
+
+2.1 ECG Arrhythmia Pipeline Baseline Defaults (configs/ecg_config.yaml):
+- shield_threshold = 0.50 (Tunable probability threshold for flagging high-risk arrhythmia; Range: [0.30, 0.90])
+- v_weight = 1.0 (Equal loss weight for Class V Ventricular Beats; Range: [1.0, 25.0])
+- s_weight = 1.0 (Equal loss weight for Class S Supraventricular Beats; Range: [1.0, 40.0])
+- f_weight = 1.0 (Equal loss weight for Class F Fusion Beats; Range: [1.0, 30.0])
+- v_prob_multiplier = 1.00 (Uncalibrated raw output probability scaling; Range: [0.50, 3.00])
+- s_prob_multiplier = 1.00 (Uncalibrated raw output probability scaling; Range: [0.50, 4.00])
+- f_prob_multiplier = 1.00 (Uncalibrated raw output probability scaling; Range: [0.50, 3.00])
+- n_weight = 1.0 (Fixed anchor reference for Class N Normal Beats; Not tuned)
+
+2.2 Credit Card Fraud Pipeline Baseline Defaults (configs/credit_config.yaml):
+- scale_pos_weight = 1.0 (Unweighted binary classification loss; Range: [1.0, 50.0])
+- decision_threshold = 0.50 (Standard decision threshold; Range: [0.10, 0.90])
+- focal_gamma = 0.0 (Standard cross-entropy loss without focal scaling; Range: [0.0, 5.0])
+- max_depth = 6 (Tree depth limit; Range: [3, 12])
+- learning_rate = 0.10 (Optimization step size; Range: [0.01, 0.30])
+
+--------------------------------------------------------------------------------
+3. LLM SAMPLING MECHANICS & API NUANCES
+--------------------------------------------------------------------------------
+3.1 Temperature (temperature = 0.2) & Top_P (top_p = 0.95):
+- Softmax scaling equation: P(token_i) = exp(z_i / T) / sum_j(exp(z_j / T)).
+- Pinning T = 0.2 across adapters (GPT-4o, Claude 3.5 Sonnet) minimizes generation entropy.
+
+3.2 Provider API Nuances (DeepSeek R1 / deepseek-reasoner):
+- DeepSeek's `deepseek-reasoner` API enforces internal sampling parameters during its 
+  extended reasoning ("thinking") phase. While temperature=0.2 is passed in request 
+  payloads, the internal reasoning engine manages sampling temperature natively.
+- GPT-4o and Claude 3.5 Sonnet strictly honor requested temperature=0.2 parameters.
+
+--------------------------------------------------------------------------------
+4. MULTI-SEED EXECUTION MECHANICS (SEEDS = [42, 123, 999])
+--------------------------------------------------------------------------------
+Executing every hyperparameter configuration across 3 distinct random seeds ([42, 123, 999]) 
+isolates true pipeline performance shifts from stochastic training/initialization noise.
+
+Arithmetic Breakdown:
+- 90 Primary Experimental Units: 3 Models x 2 Datasets x 15 Optimization Iterations.
+- 270 Model Training Executions: 90 Units x 3 Seeds ([42, 123, 999]).
+- 270 Calibration Observations: 90 Units x 3 Evaluated Metrics per iteration.
+
+--------------------------------------------------------------------------------
+5. EXACT MATHEMATICAL SPECIFICATION OF C4 ARCHITECTURAL GUARD
+--------------------------------------------------------------------------------
+In Arm 2 (Secondary Intervention Study), the Architectural Calibration Guard inspects 
+predictions prior to code execution:
+
+5.1 Trigger Conditions:
+1. Vagueness (Sharpness) Trigger:
+   IsVague = Exists m in {Metrics} s.t. (ExpectedMax_m - ExpectedMin_m) > tau_width
+   where tau_width = 0.25
+
+2. Rolling Miscalibration Trigger:
+   IsHighMACE = RollingMACE > tau_mace
+   where tau_mace = 0.15
+
+5.2 Clamping Formula:
+If IsVague == True OR IsHighMACE == True, every hyperparameter k is clamped towards baseline:
+
+   theta_clamped,k = theta_baseline,k + 0.5 * (theta_proposed,k - theta_baseline,k)  forall k
+
+--------------------------------------------------------------------------------
+6. ABLATION CONDITION SPECIFICATION (few_shot_calibration.py)
+--------------------------------------------------------------------------------
+- In Primary Arm 1 (Diagnostic Benchmark), calibration history context is DISABLED (Zero-Shot).
+- In Stage 2 Ablation Studies, `few_shot_calibration.py` is tested as an explicit 
+  Condition C2 (Self-Informed In-Context Feedback) to evaluate if past calibration scores 
+  improve model calibration over time.
+
+--------------------------------------------------------------------------------
+7. AUDIT TRAIL ENGINE (quarcaa/harness/trial_logger.py)
+--------------------------------------------------------------------------------
+To guarantee 100% auditability and reproducibility, `trial_logger.py` persists an immutable 
+raw JSON record (`logs/raw_trials/`) for every single trial containing:
+1. `trial_id` and UTC timestamp.
+2. `raw_prompt` (exact text sent to API).
+3. `raw_response_text` (exact LLM string response).
+4. `parsed_json` (extracted parameters and predictions).
+5. `executed_hyperparameters` (actual parameters sent to 3-seed runner).
+6. `seed_metrics_summary` (per-seed metrics and calculated means/stds).
+
+--------------------------------------------------------------------------------
+8. MATHEMATICAL METRIC DEFINITIONS
+--------------------------------------------------------------------------------
+
+8.1 Mean Absolute Calibration Error (MACE):
+    MACE = (1 / N) * sum_{i=1}^{N} | ((expected_min_i + expected_max_i) / 2) - mu_i |
+
+8.2 Directional Accuracy Rate (%):
+    Directional Accuracy = (1 / N) * sum_{i=1}^{N} Indicator( sign(mu_i - Baseline_i) == PredictedDirection_i )
+
+    Explicit Baseline Definition (Baseline_i):
+    - For Iteration 1 (i = 1): Baseline_1 is the pre-agent vanilla pipeline 3-seed mean.
+    - For Iterations i > 1: Baseline_i is the empirical 3-seed mean of iteration i-1.
+
+8.3 Prediction Interval Sharpness (Interval Width):
+    Sharpness = (1 / N) * sum_{i=1}^{N} (expected_max_i - expected_min_i)
+
+8.4 Overconfidence Rate (%):
+    Overconfidence = (1 / N) * sum_{i=1}^{N} Indicator(
+        (PredictedDirection_i != "DOWN" AND mu_i < expected_min_i) OR
+        (PredictedDirection_i == "DOWN" AND mu_i > expected_max_i)
+    )
+
+8.5 Meta-Predictions:
+Optional fields `predicted_execution_time_sec` and `predicted_compute_cost_usd` are 
+parsed to evaluate agent cost/latency calibration.
+================================================================================
