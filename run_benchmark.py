@@ -1,10 +1,10 @@
 """
 QuaRCAA Benchmark Execution Entrypoint
 Executes Primary Arm 1 diagnostic benchmark runs across specified model and dataset.
-Supports multi-run trajectory replicates (e.g. 3 runs x 5 iterations) to compute inter-run variance.
+Supports multi-run trajectory replicates (e.g. 3 runs x 15 iterations) to compute inter-run variance.
 
 Usage:
-    python3 run_benchmark.py --model deepseek --dataset ecg --runs 3 --iterations 5
+    python3 run_benchmark.py --model deepseek --dataset ecg --runs 3 --iterations 15
 """
 import os
 import argparse
@@ -100,8 +100,18 @@ def run_single_trajectory(agent, pipeline, runner, logger, run_idx: int, num_ite
             baseline_metrics=prev_baseline,
             actual_3seed_metrics=actual_means
         )
-        mace_val = calib_result["summary"]["mace"]
-        print(f"  [4/4] Calibration Diagnostic -> MACE: {mace_val:.4f} | Directional Acc: {calib_result['summary']['directional_accuracy_rate']*100:.1f}%")
+        
+        # Attach calibration diagnostic directly to eval_run dictionary so trial_logger persists it
+        eval_run["calibration_diagnostic"] = calib_result
+
+        summary_metrics = calib_result["summary"]
+        agent_acc = summary_metrics["agent_directional_accuracy_rate"] * 100.0
+        triv_acc = summary_metrics["trivial_always_up_accuracy_rate"] * 100.0
+        raw_mace = summary_metrics["mace"]
+        rmace_mean = summary_metrics["mean_relative_mace"]
+        rmace_med = summary_metrics["median_relative_mace"]
+
+        print(f"  [4/4] Diagnostic -> Raw MACE: {raw_mace:.4f} | RMACE (Mean/Med): {rmace_mean:.2f}/{rmace_med:.2f} | Agent Acc: {agent_acc:.1f}% vs Trivial UP: {triv_acc:.1f}%")
 
         log_path = logger.log_trial(
             trial_id=trial_id,
@@ -123,7 +133,7 @@ def run_single_trajectory(agent, pipeline, runner, logger, run_idx: int, num_ite
             "iteration": i,
             "proposed_params": proposed_params,
             "actual_means": actual_means,
-            "calibration": calib_result["summary"]
+            "calibration": summary_metrics
         })
         current_params = proposed_params
 
@@ -134,7 +144,7 @@ def main():
     parser.add_argument("--model", type=str, default="deepseek", help="Model to evaluate (deepseek, gpt, claude)")
     parser.add_argument("--dataset", type=str, default="ecg", help="Dataset pipeline to evaluate (ecg, credit)")
     parser.add_argument("--runs", type=int, default=3, help="Number of independent trajectory runs (default: 3)")
-    parser.add_argument("--iterations", type=int, default=5, help="Number of iterations per run (default: 5)")
+    parser.add_argument("--iterations", type=int, default=15, help="Number of iterations per run (default: 15)")
     args = parser.parse_args()
 
     pipeline = get_pipeline(args.dataset)

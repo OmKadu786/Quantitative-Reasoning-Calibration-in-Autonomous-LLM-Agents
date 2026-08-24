@@ -1,7 +1,10 @@
 import numpy as np
 from typing import Dict, Any
 from quarcaa.metrics.sharpness import compute_sharpness
-from quarcaa.metrics.directional_accuracy import compute_directional_accuracy
+from quarcaa.metrics.directional_accuracy import compute_directional_accuracy, compute_trivial_always_up_accuracy
+
+EPSILON = 0.001  # Fixed stabilization parameter for Relative MACE
+WINSORED_RMACE_CEILING = 10.0  # Cap ceiling to prevent degenerate spikes when step delta approaches zero
 
 def compute_quarcaa_calibration(
     predictions: Dict[str, Any],
@@ -10,8 +13,10 @@ def compute_quarcaa_calibration(
 ) -> Dict[str, Any]:
     """
     Computes QuaRCAA Diagnostic Metrics:
-    - MACE (Mean Absolute Calibration Error)
-    - Directional Accuracy Rate (%)
+    - MACE (Raw Mean Absolute Calibration Error)
+    - Relative MACE (RMACE) normalized by actual step delta with epsilon=0.001 and Winsorized capping at 10.0
+    - Mean & Median RMACE
+    - Per-Metric LLM Directional Accuracy vs. Per-Metric Trivial 'Always Predict UP' Control Accuracy
     - Prediction Interval Sharpness (Expected_Max - Expected_Min)
     - Overconfidence Rate (%)
     """
@@ -30,44 +35,71 @@ def compute_quarcaa_calibration(
         base_val = baseline_metrics.get(metric_name, 0.0)
         actual_val = actual_3seed_metrics.get(metric_name, 0.0)
         actual_delta = actual_val - base_val
+        abs_actual_delta = abs(actual_delta)
         
-        # 1. Directional Accuracy with Explicit Baseline
-        dir_correct = compute_directional_accuracy(pred_dir, actual_val, base_val)
+        # 1. Directional Accuracy (Agent vs. Trivial Always-UP Control Baseline)
+        agent_dir_correct = compute_directional_accuracy(pred_dir, actual_val, base_val)
+        trivial_up_correct = compute_trivial_always_up_accuracy(actual_val, base_val)
             
         # 2. Absolute Calibration Error (ACE)
         ace = abs(target_midpoint - actual_val)
         
-        # 3. Overconfidence Check (Actual fell short of expected minimum for UP/STABLE, or exceeded expected maximum for DOWN)
+        # 3. Relative Calibration Error (RCE) with epsilon=0.001 & Winsorized capping at 10.0
+        rce_uncapped = ace / (abs_actual_delta + EPSILON)
+        rce_capped = min(rce_uncapped, WINSORED_RMACE_CEILING)
+        
+        # 4. Overconfidence Check
         if pred_dir == "DOWN":
             is_overconfident = actual_val > exp_max
         else:
             is_overconfident = actual_val < exp_min
 
-        
         results[metric_name] = {
             "predicted_direction": pred_dir,
             "baseline_val": base_val,
             "actual_3seed_mean": actual_val,
             "actual_delta": actual_delta,
-            "directional_correct": bool(dir_correct),
+            "agent_directional_correct": bool(agent_dir_correct),
+            "trivial_always_up_correct": bool(trivial_up_correct),
             "expected_range": [exp_min, exp_max],
             "interval_width": interval_width,
             "target_midpoint": target_midpoint,
             "absolute_calibration_error": ace,
+            "relative_calibration_error_uncapped": rce_uncapped,
+            "relative_calibration_error_capped": rce_capped,
             "is_overconfident": bool(is_overconfident)
         }
         
     sharpness_info = compute_sharpness(predictions)
-    dir_acc = np.mean([v["directional_correct"] for v in results.values()]) if results else 0.0
-    mace = np.mean([v["absolute_calibration_error"] for v in results.values()]) if results else 0.0
-    overconf_rate = np.mean([v["is_overconfident"] for v in results.values()]) if results else 0.0
+    
+    agent_dir_acc = float(np.mean([v["agent_directional_correct"] for v in results.values()])) if results else 0.0
+    trivial_up_acc = float(np.mean([v["trivial_always_up_correct"] for v in results.values()])) if results else 0.0
+    
+    mace = float(np.mean([v["absolute_calibration_error"] for v in results.values()])) if results else 0.0
+    
+    rce_capped_vals = [v["relative_calibration_error_capped"] for v in results.values()]
+    mean_relative_mace = float(np.mean(rce_capped_vals)) if rce_capped_vals else 0.0
+    median_relative_mace = float(np.median(rce_capped_vals)) if rce_capped_vals else 0.0
+    
+    overconf_rate = float(np.mean([v["is_overconfident"] for v in results.values()])) if results else 0.0
+    
+    # Per-metric directional accuracy breakdowns
+    per_metric_agent_acc = {k: v["agent_directional_correct"] for k, v in results.items()}
+    per_metric_trivial_acc = {k: v["trivial_always_up_correct"] for k, v in results.items()}
     
     return {
         "metric_details": results,
         "summary": {
-            "directional_accuracy_rate": float(dir_acc),
-            "mace": float(mace),
+            "agent_directional_accuracy_rate": agent_dir_acc,
+            "trivial_always_up_accuracy_rate": trivial_up_acc,
+            "mace": mace,
+            "mean_relative_mace": mean_relative_mace,
+            "median_relative_mace": median_relative_mace,
+            "rmace_epsilon": EPSILON,
+            "rmace_winsorized_ceiling": WINSORED_RMACE_CEILING,
             "mean_sharpness": sharpness_info["mean_sharpness"],
-            "overconfidence_rate": float(overconf_rate)
+            "overconfidence_rate": overconf_rate,
+            "per_metric_agent_directional_acc": per_metric_agent_acc,
+            "per_metric_trivial_always_up_acc": per_metric_trivial_acc
         }
     }

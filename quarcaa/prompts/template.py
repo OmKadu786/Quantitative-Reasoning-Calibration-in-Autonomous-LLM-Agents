@@ -53,17 +53,18 @@ CRITICAL INSTRUCTION: Along with your natural language Chain-of-Thought reasonin
 
 def get_system_prompt(instructions: str, history: str, defaults: dict = None) -> str:
     """Returns byte-identical system prompt string for all models using raw un-tuned baseline defaults."""
-    defaults = defaults or {
-        "shield_threshold_default": 0.50,
-        "v_weight_default": 1.0,
-        "s_weight_default": 1.0,
-        "f_weight_default": 1.0,
-        "v_mult_default": 1.00,
-        "s_mult_default": 1.00,
-        "f_mult_default": 1.00
+    d = defaults or {}
+    fmt_defaults = {
+        "shield_threshold_default": d.get("shield_threshold", 0.50),
+        "v_weight_default": d.get("v_weight", 1.0),
+        "s_weight_default": d.get("s_weight", 1.0),
+        "f_weight_default": d.get("f_weight", 1.0),
+        "v_mult_default": d.get("v_prob_multiplier", 1.00),
+        "s_mult_default": d.get("s_prob_multiplier", 1.00),
+        "f_mult_default": d.get("f_prob_multiplier", 1.00)
     }
     return SYSTEM_PROMPT_TEMPLATE.format(
         instructions=instructions,
         history=history,
-        **defaults
+        **fmt_defaults
     )

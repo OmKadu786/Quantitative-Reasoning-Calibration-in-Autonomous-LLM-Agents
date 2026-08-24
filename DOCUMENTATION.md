@@ -102,15 +102,21 @@ Iteration 1 **must start at raw, un-tuned baseline defaults** (equal weights = `
 1. **Mean Absolute Calibration Error (MACE):**
    $$\text{MACE} = \frac{1}{N} \sum_{i=1}^{N} \left| \frac{\text{ExpectedMin}_i + \text{ExpectedMax}_i}{2} - \mu_i \right|$$
 
-2. **Directional Accuracy Rate (%):**
-   $$\text{Directional Accuracy} = \frac{1}{N} \sum_{i=1}^{N} \mathbf{1}\left( \text{sign}(\mu_i - \text{Baseline}_i) = \text{PredictedDirection}_i \right)$$
-   *(Where $\text{Baseline}_1$ is the vanilla pre-agent 3-seed mean, and $\text{Baseline}_i$ for $i > 1$ is the empirical 3-seed mean of iteration $i-1$.)*
+2. **Relative MACE (RMACE) with Stabilized Epsilon & Winsorized Capping:**
+   $$\text{RMACE}_k = \min\left( \frac{\text{ACE}_k}{|\mu_{k, i} - \mu_{k, i-1}| + \epsilon}, \; 10.0 \right) \quad \text{where } \epsilon = 0.001$$
+   *(Calculated per metric $k$, reporting both Mean RMACE and Median RMACE to prevent search saturation artifacts from distorting calibration trends).*
 
-3. **Prediction Interval Sharpness (Interval Width):**
+3. **LLM Directional Accuracy vs. Trivial "Always Predict UP" Control Baseline:**
+   $$\text{Agent Directional Acc} = \frac{1}{N} \sum_{i=1}^{N} \mathbf{1}\left( \text{sign}(\mu_i - \text{Baseline}_i) = \text{PredictedDirection}_i \right)$$
+   $$\text{Trivial UP Acc} = \frac{1}{N} \sum_{i=1}^{N} \mathbf{1}\left( \mu_i - \text{Baseline}_i > 0.001 \right)$$
+   *(Calculated per metric: `macro_f1`, `recall_F`, `recall_S` to detect whether metric monotonicity is driving directional accuracy).*
+
+4. **Prediction Interval Sharpness (Interval Width):**
    $$\text{Sharpness} = \frac{1}{N} \sum_{i=1}^{N} \left( \text{ExpectedMax}_i - \text{ExpectedMin}_i \right)$$
 
-4. **Overconfidence Rate (%):**
+5. **Overconfidence Rate (%):**
    $$\text{Overconfidence Rate} = \frac{1}{N} \sum_{i=1}^{N} \mathbf{1}\left( (\text{Direction}_i \neq \text{"DOWN"} \land \mu_i < \text{ExpectedMin}_i) \lor (\text{Direction}_i == \text{"DOWN"} \land \mu_i > \text{ExpectedMax}_i) \right)$$
+
 
 5. **Exact C4 Clamping Formula (Arm 2 Intervention):**
    $$\theta_{\text{clamped}, k} = \theta_{\text{baseline}, k} + 0.5 \cdot (\theta_{\text{proposed}, k} - \theta_{\text{baseline}, k}) \quad \forall k$$
