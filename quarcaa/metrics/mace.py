@@ -16,11 +16,13 @@ def compute_quarcaa_calibration(
     - MACE (Raw Mean Absolute Calibration Error)
     - Relative MACE (RMACE) normalized by actual step delta with epsilon=0.001 and Winsorized capping at 10.0
     - Mean & Median RMACE
+    - RMACE Censored Count (number of observations hitting the 10.0 ceiling)
     - Per-Metric LLM Directional Accuracy vs. Per-Metric Trivial 'Always Predict UP' Control Accuracy
     - Prediction Interval Sharpness (Expected_Max - Expected_Min)
     - Overconfidence Rate (%)
     """
     results = {}
+    censored_count = 0
     
     for metric_name, pred_data in predictions.items():
         if metric_name not in actual_3seed_metrics:
@@ -46,6 +48,8 @@ def compute_quarcaa_calibration(
         
         # 3. Relative Calibration Error (RCE) with epsilon=0.001 & Winsorized capping at 10.0
         rce_uncapped = ace / (abs_actual_delta + EPSILON)
+        if rce_uncapped >= WINSORED_RMACE_CEILING:
+            censored_count += 1
         rce_capped = min(rce_uncapped, WINSORED_RMACE_CEILING)
         
         # 4. Overconfidence Check
@@ -67,6 +71,7 @@ def compute_quarcaa_calibration(
             "absolute_calibration_error": ace,
             "relative_calibration_error_uncapped": rce_uncapped,
             "relative_calibration_error_capped": rce_capped,
+            "is_censored_at_ceiling": rce_uncapped >= WINSORED_RMACE_CEILING,
             "is_overconfident": bool(is_overconfident)
         }
         
@@ -95,6 +100,8 @@ def compute_quarcaa_calibration(
             "mace": mace,
             "mean_relative_mace": mean_relative_mace,
             "median_relative_mace": median_relative_mace,
+            "rmace_censored_count": censored_count,
+            "total_metrics_evaluated": len(results),
             "rmace_epsilon": EPSILON,
             "rmace_winsorized_ceiling": WINSORED_RMACE_CEILING,
             "mean_sharpness": sharpness_info["mean_sharpness"],

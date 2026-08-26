@@ -1,51 +1,40 @@
 """
 QuaRCAA Raw Trial Audit Logger
 Persists full raw API request prompts, raw response text, HTTP status codes, timestamps,
-seed metrics, and parsed JSON for 100% auditable per-trial verification.
+seed metrics, and parsed JSON for 100% auditable verification.
+Saves 1 JSON file per trajectory run containing all iterations in a structured list.
 """
 import os
 import json
 import time
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 class TrialLogger:
     def __init__(self, log_dir: str = "logs/raw_trials"):
         self.log_dir = log_dir
         os.makedirs(self.log_dir, exist_ok=True)
 
-    def log_trial(
+    def log_run_trajectory(
         self,
-        trial_id: str,
+        run_idx: int,
         model_name: str,
         dataset_name: str,
-        iteration: int,
-        raw_prompt: str,
-        raw_response_text: str,
-        parsed_json: Dict[str, Any],
-        executed_params: Dict[str, float],
-        seed_metrics: Dict[str, Any],
-        was_gated_by_c4: bool = False,
-        gate_reason: str = "NONE"
+        trajectory_records: List[Dict[str, Any]]
     ) -> str:
         """
-        Saves an immutable raw JSON trial record to disk.
+        Saves 1 immutable raw JSON file for an entire trajectory run containing all iterations.
         """
         record = {
-            "trial_id": trial_id,
+            "run_index": run_idx,
             "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "model_name": model_name,
             "dataset_name": dataset_name,
-            "iteration": iteration,
-            "was_gated_by_c4": was_gated_by_c4,
-            "gate_reason": gate_reason,
-            "raw_prompt": raw_prompt,
-            "raw_response_text": raw_response_text,
-            "parsed_json": parsed_json,
-            "executed_hyperparameters": executed_params,
-            "seed_metrics_summary": seed_metrics
+            "total_iterations": len(trajectory_records),
+            "iterations": trajectory_records
         }
         
-        filename = f"{dataset_name}_{model_name}_iter{iteration:02d}_{trial_id}.json"
+        timestamp_str = int(time.time())
+        filename = f"{dataset_name}_{model_name}_run{run_idx:02d}_t{timestamp_str}.json"
         filepath = os.path.join(self.log_dir, filename)
         
         with open(filepath, "w", encoding="utf-8") as f:

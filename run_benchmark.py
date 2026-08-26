@@ -58,9 +58,10 @@ def run_single_trajectory(agent, pipeline, runner, logger, run_idx: int, num_ite
     print(f"   Baseline 3-Seed Means: {baseline_metrics}")
 
     history_records = []
+    full_trial_records = []
 
     for i in range(1, num_iterations + 1):
-        trial_id = f"r{run_idx:02d}_t{int(time.time())}_{i:02d}"
+        trial_id = f"r{run_idx:02d}_iter{i:02d}"
         print(f"\n--- [Run {run_idx:02d}] Iteration {i:02d}/{num_iterations:02d} ---")
         
         history_str = f"Iteration 0 (Baseline): Parameters = {current_params}, 3-Seed Means = {baseline_metrics}\n"
@@ -101,7 +102,6 @@ def run_single_trajectory(agent, pipeline, runner, logger, run_idx: int, num_ite
             actual_3seed_metrics=actual_means
         )
         
-        # Attach calibration diagnostic directly to eval_run dictionary so trial_logger persists it
         eval_run["calibration_diagnostic"] = calib_result
 
         summary_metrics = calib_result["summary"]
@@ -113,20 +113,18 @@ def run_single_trajectory(agent, pipeline, runner, logger, run_idx: int, num_ite
 
         print(f"  [4/4] Diagnostic -> Raw MACE: {raw_mace:.4f} | RMACE (Mean/Med): {rmace_mean:.2f}/{rmace_med:.2f} | Agent Acc: {agent_acc:.1f}% vs Trivial UP: {triv_acc:.1f}%")
 
-        log_path = logger.log_trial(
-            trial_id=trial_id,
-            model_name=agent.model_name,
-            dataset_name=dataset_name,
-            iteration=i,
-            raw_prompt=instructions_str + "\n" + history_str,
-            raw_response_text=raw_response,
-            parsed_json=parsed_data,
-            executed_params=proposed_params,
-            seed_metrics=eval_run,
-            was_gated_by_c4=False,
-            gate_reason="NONE"
-        )
-        print(f"        Immutable Log Persisted: {log_path}")
+        trial_record = {
+            "trial_id": trial_id,
+            "iteration": i,
+            "raw_prompt": instructions_str + "\n" + history_str,
+            "raw_response_text": raw_response,
+            "parsed_json": parsed_data,
+            "executed_hyperparameters": proposed_params,
+            "seed_metrics_summary": eval_run,
+            "was_gated_by_c4": False,
+            "gate_reason": "NONE"
+        }
+        full_trial_records.append(trial_record)
 
         history_records.append({
             "run_index": run_idx,
@@ -136,6 +134,15 @@ def run_single_trajectory(agent, pipeline, runner, logger, run_idx: int, num_ite
             "calibration": summary_metrics
         })
         current_params = proposed_params
+
+    # Save 1 JSON file per trajectory run containing all iterations
+    log_path = logger.log_run_trajectory(
+        run_idx=run_idx,
+        model_name=agent.model_name,
+        dataset_name=dataset_name,
+        trajectory_records=full_trial_records
+    )
+    print(f"\n   💾 Full Run {run_idx:02d} Trajectory Saved to: {log_path}")
 
     return history_records
 
