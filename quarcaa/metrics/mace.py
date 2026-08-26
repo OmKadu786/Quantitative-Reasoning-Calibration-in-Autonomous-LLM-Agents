@@ -64,7 +64,8 @@ def compute_quarcaa_calibration(
             "predicted_direction": pred_dir,
             "baseline_val": base_val,
             "actual_3seed_mean": actual_val,
-            "actual_delta": actual_delta,
+            "actual_delta": round(actual_delta, 6),
+            "predicted_delta": round(target_midpoint - base_val, 6),  # Agent predicted this much change
             "agent_directional_correct": bool(agent_dir_correct),
             "random_baseline_correct": bool(random_baseline_correct),
             "expected_range": [exp_min, exp_max],
