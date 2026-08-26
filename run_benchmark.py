@@ -66,7 +66,7 @@ def run_single_trajectory(agent, pipeline, runner, logger, run_idx: int, num_ite
         
         history_str = f"Iteration 0 (Baseline): Parameters = {current_params}, 3-Seed Means = {baseline_metrics}\n"
         for idx, record in enumerate(history_records, 1):
-            history_str += f"Iteration {idx}: Proposed = {record['proposed_params']}, 3-Seed Means = {record['actual_means']}\n"
+            history_str += f"Iteration {idx}: Proposed = {record['proposed_params']}, 3-Seed Means = {record['actual_means']}, 3-Seed Stds = {record['actual_stds']}\n"
 
         instructions_str = f"Optimize the {dataset_name.upper()} pipeline. Maximize macro_f1 while improving minority recalls."
 
@@ -106,12 +106,12 @@ def run_single_trajectory(agent, pipeline, runner, logger, run_idx: int, num_ite
 
         summary_metrics = calib_result["summary"]
         agent_acc = summary_metrics["agent_directional_accuracy_rate"] * 100.0
-        triv_acc = summary_metrics["trivial_always_up_accuracy_rate"] * 100.0
+        rand_acc = summary_metrics["random_baseline_accuracy_rate"] * 100.0
         raw_mace = summary_metrics["mace"]
         rmace_mean = summary_metrics["mean_relative_mace"]
         rmace_med = summary_metrics["median_relative_mace"]
 
-        print(f"  [4/4] Diagnostic -> Raw MACE: {raw_mace:.4f} | RMACE (Mean/Med): {rmace_mean:.2f}/{rmace_med:.2f} | Agent Acc: {agent_acc:.1f}% vs Trivial UP: {triv_acc:.1f}%")
+        print(f"  [4/4] Diagnostic -> Raw MACE: {raw_mace:.4f} | RMACE (Mean/Med): {rmace_mean:.2f}/{rmace_med:.2f} | Agent Acc: {agent_acc:.1f}% vs Random Baseline: {rand_acc:.1f}%")
 
         trial_record = {
             "trial_id": trial_id,
@@ -131,6 +131,7 @@ def run_single_trajectory(agent, pipeline, runner, logger, run_idx: int, num_ite
             "iteration": i,
             "proposed_params": proposed_params,
             "actual_means": actual_means,
+            "actual_stds": eval_run["3seed_stds"],
             "calibration": summary_metrics
         })
         current_params = proposed_params

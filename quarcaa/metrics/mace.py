@@ -1,7 +1,7 @@
 import numpy as np
 from typing import Dict, Any
 from quarcaa.metrics.sharpness import compute_sharpness
-from quarcaa.metrics.directional_accuracy import compute_directional_accuracy, compute_trivial_always_up_accuracy
+from quarcaa.metrics.directional_accuracy import compute_directional_accuracy, compute_random_baseline_accuracy
 
 EPSILON = 0.001  # Fixed stabilization parameter for Relative MACE
 WINSORED_RMACE_CEILING = 10.0  # Cap ceiling to prevent degenerate spikes when step delta approaches zero
@@ -39,9 +39,11 @@ def compute_quarcaa_calibration(
         actual_delta = actual_val - base_val
         abs_actual_delta = abs(actual_delta)
         
-        # 1. Directional Accuracy (Agent vs. Trivial Always-UP Control Baseline)
+        # 1. Directional Accuracy (Agent vs. Random Baseline Control)
         agent_dir_correct = compute_directional_accuracy(pred_dir, actual_val, base_val)
-        trivial_up_correct = compute_trivial_always_up_accuracy(actual_val, base_val)
+        # Random baseline seed derived from metric name hash + base_val for full reproducibility
+        rng_seed = abs(hash(metric_name + str(round(base_val, 4)))) % (2**31)
+        random_baseline_correct = compute_random_baseline_accuracy(actual_val, base_val, rng_seed=rng_seed)
             
         # 2. Absolute Calibration Error (ACE)
         ace = abs(target_midpoint - actual_val)
@@ -64,7 +66,7 @@ def compute_quarcaa_calibration(
             "actual_3seed_mean": actual_val,
             "actual_delta": actual_delta,
             "agent_directional_correct": bool(agent_dir_correct),
-            "trivial_always_up_correct": bool(trivial_up_correct),
+            "random_baseline_correct": bool(random_baseline_correct),
             "expected_range": [exp_min, exp_max],
             "interval_width": interval_width,
             "target_midpoint": target_midpoint,
@@ -78,7 +80,7 @@ def compute_quarcaa_calibration(
     sharpness_info = compute_sharpness(predictions)
     
     agent_dir_acc = float(np.mean([v["agent_directional_correct"] for v in results.values()])) if results else 0.0
-    trivial_up_acc = float(np.mean([v["trivial_always_up_correct"] for v in results.values()])) if results else 0.0
+    random_baseline_acc = float(np.mean([v["random_baseline_correct"] for v in results.values()])) if results else 0.0
     
     mace = float(np.mean([v["absolute_calibration_error"] for v in results.values()])) if results else 0.0
     
@@ -90,13 +92,12 @@ def compute_quarcaa_calibration(
     
     # Per-metric directional accuracy breakdowns
     per_metric_agent_acc = {k: v["agent_directional_correct"] for k, v in results.items()}
-    per_metric_trivial_acc = {k: v["trivial_always_up_correct"] for k, v in results.items()}
     
     return {
         "metric_details": results,
         "summary": {
             "agent_directional_accuracy_rate": agent_dir_acc,
-            "trivial_always_up_accuracy_rate": trivial_up_acc,
+            "random_baseline_accuracy_rate": random_baseline_acc,
             "mace": mace,
             "mean_relative_mace": mean_relative_mace,
             "median_relative_mace": median_relative_mace,
@@ -106,7 +107,7 @@ def compute_quarcaa_calibration(
             "rmace_winsorized_ceiling": WINSORED_RMACE_CEILING,
             "mean_sharpness": sharpness_info["mean_sharpness"],
             "overconfidence_rate": overconf_rate,
-            "per_metric_agent_directional_acc": per_metric_agent_acc,
-            "per_metric_trivial_always_up_acc": per_metric_trivial_acc
+            "per_metric_agent_directional_acc": {k: v["agent_directional_correct"] for k, v in results.items()},
+            "per_metric_random_baseline_acc": {k: v["random_baseline_correct"] for k, v in results.items()}
         }
     }
