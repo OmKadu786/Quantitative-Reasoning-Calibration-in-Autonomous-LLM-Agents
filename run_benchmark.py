@@ -55,6 +55,7 @@ def run_single_trajectory(agent, pipeline, runner, logger, run_idx: int, num_ite
     print(f"[Run {run_idx:02d} - Iteration 00] Running 3-Seed Raw Un-tuned Baseline ([42, 123, 999])...")
     baseline_run = runner.run_multi_seed_evaluation(current_params)
     baseline_metrics = baseline_run["3seed_means"]
+    baseline_stds = baseline_run["3seed_stds"]
     print(f"   Baseline 3-Seed Means: {baseline_metrics}")
 
     history_records = []
@@ -64,11 +65,16 @@ def run_single_trajectory(agent, pipeline, runner, logger, run_idx: int, num_ite
         trial_id = f"r{run_idx:02d}_iter{i:02d}"
         print(f"\n--- [Run {run_idx:02d}] Iteration {i:02d}/{num_iterations:02d} ---")
         
-        history_str = f"Iteration 0 (Baseline): Parameters = {current_params}, 3-Seed Means = {baseline_metrics}\n"
+        history_str = f"Iteration 0 (Baseline): Parameters = {current_params}, 3-Seed Means = {baseline_metrics}, 3-Seed Stds = {baseline_stds}\n"
         for idx, record in enumerate(history_records, 1):
             history_str += f"Iteration {idx}: Proposed = {record['proposed_params']}, 3-Seed Means = {record['actual_means']}, 3-Seed Stds = {record['actual_stds']}\n"
 
-        instructions_str = f"Optimize the {dataset_name.upper()} pipeline. Maximize macro_f1 while improving minority recalls."
+        instructions_str = (
+            f"Optimize the {dataset_name.upper()} pipeline. Primary goal: maximize macro_f1. "
+            f"Secondary goal: improve recalls for all 3 minority classes (F=Fusion, S=Supraventricular, V=Ventricular). "
+            f"Note that pushing minority class weights will increase minority recalls but will decrease their precision "
+            f"and reduce recall_N (Normal class), creating a precision-recall trade-off that affects macro_f1."
+        )
 
         print(f"  [1/4] Querying {agent.model_name} API...")
         try:

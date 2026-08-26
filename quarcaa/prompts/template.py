@@ -52,10 +52,25 @@ CRITICAL INSTRUCTION: Along with your natural language Chain-of-Thought reasonin
       "expected_min": 0.50,
       "expected_max": 0.62
     }},
+    "recall_V": {{
+      "direction": "UP",
+      "expected_min": 0.65,
+      "expected_max": 0.78
+    }},
+    "precision_V": {{
+      "direction": "DOWN",
+      "expected_min": 0.60,
+      "expected_max": 0.73
+    }},
     "recall_N": {{
       "direction": "DOWN",
       "expected_min": 0.85,
       "expected_max": 0.94
+    }},
+    "precision_N": {{
+      "direction": "DOWN",
+      "expected_min": 0.88,
+      "expected_max": 0.95
     }}
   }},
   "meta_predictions": {{
