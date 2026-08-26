@@ -29,18 +29,33 @@ CRITICAL INSTRUCTION: Along with your natural language Chain-of-Thought reasonin
   "predictions": {{
     "macro_f1": {{
       "direction": "UP",
-      "expected_min": 0.55,
-      "expected_max": 0.65
+      "expected_min": 0.52,
+      "expected_max": 0.62
     }},
     "recall_F": {{
       "direction": "UP",
       "expected_min": 0.20,
       "expected_max": 0.35
     }},
+    "precision_F": {{
+      "direction": "DOWN",
+      "expected_min": 0.35,
+      "expected_max": 0.48
+    }},
     "recall_S": {{
       "direction": "UP",
-      "expected_min": 0.60,
-      "expected_max": 0.75
+      "expected_min": 0.55,
+      "expected_max": 0.70
+    }},
+    "precision_S": {{
+      "direction": "DOWN",
+      "expected_min": 0.50,
+      "expected_max": 0.62
+    }},
+    "recall_N": {{
+      "direction": "DOWN",
+      "expected_min": 0.85,
+      "expected_max": 0.94
     }}
   }},
   "meta_predictions": {{
