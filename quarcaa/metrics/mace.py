@@ -1,10 +1,34 @@
+"""
+QuaRCAA Calibration Metrics — Self-contained module.
+Computes MACE, RMACE, Directional Accuracy, Sharpness, and Overconfidence Rate.
+All helper functions inlined here — no external metric submodule imports needed.
+"""
 import numpy as np
+import random
 from typing import Dict, Any
-from quarcaa.metrics.sharpness import compute_sharpness
-from quarcaa.metrics.directional_accuracy import compute_directional_accuracy, compute_random_baseline_accuracy
 
-EPSILON = 0.001  # Fixed stabilization parameter for Relative MACE
-WINSORED_RMACE_CEILING = 10.0  # Cap ceiling to prevent degenerate spikes when step delta approaches zero
+EPSILON = 0.001           # Stabilization parameter for Relative MACE denominator
+RMACE_CEILING = 10.0      # Winsorized cap — prevents degenerate spikes when step delta ≈ 0
+
+
+def _directional_accuracy(pred_dir: str, actual_val: float, base_val: float) -> bool:
+    """True if agent's predicted direction matches actual change direction."""
+    actual_delta = actual_val - base_val
+    if abs(actual_delta) < 1e-9:
+        return False  # No real movement — directional prediction is meaningless
+    if pred_dir == "UP":
+        return actual_delta > 0
+    elif pred_dir == "DOWN":
+        return actual_delta < 0
+    return False
+
+
+def _random_baseline_accuracy(actual_val: float, base_val: float, rng_seed: int) -> bool:
+    """50/50 random coin flip per metric — reproducible via seed derived from trajectory state."""
+    rng = random.Random(rng_seed)
+    random_dir = "UP" if rng.random() >= 0.5 else "DOWN"
+    return _directional_accuracy(random_dir, actual_val, base_val)
+
 
 def compute_quarcaa_calibration(
     predictions: Dict[str, Any],
@@ -12,103 +36,95 @@ def compute_quarcaa_calibration(
     actual_3seed_metrics: Dict[str, float]
 ) -> Dict[str, Any]:
     """
-    Computes QuaRCAA Diagnostic Metrics:
-    - MACE (Raw Mean Absolute Calibration Error)
-    - Relative MACE (RMACE) normalized by actual step delta with epsilon=0.001 and Winsorized capping at 10.0
-    - Mean & Median RMACE
-    - RMACE Censored Count (number of observations hitting the 10.0 ceiling)
-    - Per-Metric LLM Directional Accuracy vs. Per-Metric Trivial 'Always Predict UP' Control Accuracy
-    - Prediction Interval Sharpness (Expected_Max - Expected_Min)
-    - Overconfidence Rate (%)
+    Core QuaRCAA calibration diagnostic.
+
+    Per metric:
+      - MACE: |predicted_midpoint - actual_3seed_mean|
+      - RMACE: MACE / (|actual_delta| + epsilon), capped at 10.0
+      - predicted_delta vs actual_delta: magnitude comparison readable directly from logs
+      - Directional accuracy (agent vs random baseline)
+      - Overconfidence: actual fell outside predicted interval
+
+    Aggregated:
+      - Mean/Median RMACE, Mean MACE, Overconfidence Rate, Directional Accuracy
     """
     results = {}
     censored_count = 0
-    
+
     for metric_name, pred_data in predictions.items():
         if metric_name not in actual_3seed_metrics:
             continue
-            
-        pred_dir = pred_data.get("direction", "STABLE").upper()
-        exp_min = float(pred_data.get("expected_min", 0.0))
-        exp_max = float(pred_data.get("expected_max", 1.0))
+
+        pred_dir      = pred_data.get("direction", "STABLE").upper()
+        exp_min       = float(pred_data.get("expected_min", 0.0))
+        exp_max       = float(pred_data.get("expected_max", 1.0))
         target_midpoint = (exp_min + exp_max) / 2.0
-        interval_width = exp_max - exp_min
-        
-        base_val = baseline_metrics.get(metric_name, 0.0)
-        actual_val = actual_3seed_metrics.get(metric_name, 0.0)
+        interval_width  = exp_max - exp_min
+
+        base_val    = float(baseline_metrics.get(metric_name, 0.0))
+        actual_val  = float(actual_3seed_metrics.get(metric_name, 0.0))
         actual_delta = actual_val - base_val
-        abs_actual_delta = abs(actual_delta)
-        
-        # 1. Directional Accuracy (Agent vs. Random Baseline Control)
-        agent_dir_correct = compute_directional_accuracy(pred_dir, actual_val, base_val)
-        # Random baseline seed derived from metric name hash + base_val for full reproducibility
-        rng_seed = abs(hash(metric_name + str(round(base_val, 4)))) % (2**31)
-        random_baseline_correct = compute_random_baseline_accuracy(actual_val, base_val, rng_seed=rng_seed)
-            
-        # 2. Absolute Calibration Error (ACE)
+
+        # Directional accuracy
+        agent_correct  = _directional_accuracy(pred_dir, actual_val, base_val)
+        rng_seed       = abs(hash(metric_name + str(round(base_val, 4)))) % (2**31)
+        random_correct = _random_baseline_accuracy(actual_val, base_val, rng_seed=rng_seed)
+
+        # Absolute calibration error
         ace = abs(target_midpoint - actual_val)
-        
-        # 3. Relative Calibration Error (RCE) with epsilon=0.001 & Winsorized capping at 10.0
-        rce_uncapped = ace / (abs_actual_delta + EPSILON)
-        if rce_uncapped >= WINSORED_RMACE_CEILING:
+
+        # Relative calibration error
+        rce_uncapped = ace / (abs(actual_delta) + EPSILON)
+        if rce_uncapped >= RMACE_CEILING:
             censored_count += 1
-        rce_capped = min(rce_uncapped, WINSORED_RMACE_CEILING)
-        
-        # 4. Overconfidence Check
+        rce_capped = min(rce_uncapped, RMACE_CEILING)
+
+        # Overconfidence: actual landed outside predicted interval
         if pred_dir == "DOWN":
             is_overconfident = actual_val > exp_max
         else:
             is_overconfident = actual_val < exp_min
 
         results[metric_name] = {
-            "predicted_direction": pred_dir,
-            "baseline_val": base_val,
-            "actual_3seed_mean": actual_val,
-            "actual_delta": round(actual_delta, 6),
-            "predicted_delta": round(target_midpoint - base_val, 6),  # Agent predicted this much change
-            "agent_directional_correct": bool(agent_dir_correct),
-            "random_baseline_correct": bool(random_baseline_correct),
-            "expected_range": [exp_min, exp_max],
-            "interval_width": interval_width,
-            "target_midpoint": target_midpoint,
-            "absolute_calibration_error": ace,
-            "relative_calibration_error_uncapped": rce_uncapped,
-            "relative_calibration_error_capped": rce_capped,
-            "is_censored_at_ceiling": rce_uncapped >= WINSORED_RMACE_CEILING,
-            "is_overconfident": bool(is_overconfident)
+            "predicted_direction":             pred_dir,
+            "baseline_val":                    round(base_val, 6),
+            "actual_3seed_mean":               round(actual_val, 6),
+            "actual_delta":                    round(actual_delta, 6),
+            "predicted_delta":                 round(target_midpoint - base_val, 6),
+            "agent_directional_correct":       bool(agent_correct),
+            "random_baseline_correct":         bool(random_correct),
+            "expected_range":                  [exp_min, exp_max],
+            "interval_width":                  round(interval_width, 6),
+            "target_midpoint":                 round(target_midpoint, 6),
+            "absolute_calibration_error":      round(ace, 6),
+            "relative_calibration_error_uncapped": round(rce_uncapped, 4),
+            "relative_calibration_error_capped":   round(rce_capped, 4),
+            "is_censored_at_ceiling":          rce_uncapped >= RMACE_CEILING,
+            "is_overconfident":                bool(is_overconfident)
         }
-        
-    sharpness_info = compute_sharpness(predictions)
-    
-    agent_dir_acc = float(np.mean([v["agent_directional_correct"] for v in results.values()])) if results else 0.0
-    random_baseline_acc = float(np.mean([v["random_baseline_correct"] for v in results.values()])) if results else 0.0
-    
-    mace = float(np.mean([v["absolute_calibration_error"] for v in results.values()])) if results else 0.0
-    
-    rce_capped_vals = [v["relative_calibration_error_capped"] for v in results.values()]
-    mean_relative_mace = float(np.mean(rce_capped_vals)) if rce_capped_vals else 0.0
-    median_relative_mace = float(np.median(rce_capped_vals)) if rce_capped_vals else 0.0
-    
-    overconf_rate = float(np.mean([v["is_overconfident"] for v in results.values()])) if results else 0.0
-    
-    # Per-metric directional accuracy breakdowns
-    per_metric_agent_acc = {k: v["agent_directional_correct"] for k, v in results.items()}
-    
+
+    if not results:
+        return {"metric_details": {}, "summary": {}}
+
+    vals = list(results.values())
+    mean_sharpness = float(np.mean([v["interval_width"] for v in vals]))
+    rce_vals       = [v["relative_calibration_error_capped"] for v in vals]
+
     return {
         "metric_details": results,
         "summary": {
-            "agent_directional_accuracy_rate": agent_dir_acc,
-            "random_baseline_accuracy_rate": random_baseline_acc,
-            "mace": mace,
-            "mean_relative_mace": mean_relative_mace,
-            "median_relative_mace": median_relative_mace,
-            "rmace_censored_count": censored_count,
-            "total_metrics_evaluated": len(results),
-            "rmace_epsilon": EPSILON,
-            "rmace_winsorized_ceiling": WINSORED_RMACE_CEILING,
-            "mean_sharpness": sharpness_info["mean_sharpness"],
-            "overconfidence_rate": overconf_rate,
+            "agent_directional_accuracy_rate":  float(np.mean([v["agent_directional_correct"] for v in vals])),
+            "random_baseline_accuracy_rate":    float(np.mean([v["random_baseline_correct"] for v in vals])),
+            "mace":                             float(np.mean([v["absolute_calibration_error"] for v in vals])),
+            "mean_relative_mace":               float(np.mean(rce_vals)),
+            "median_relative_mace":             float(np.median(rce_vals)),
+            "rmace_censored_count":             censored_count,
+            "total_metrics_evaluated":          len(results),
+            "rmace_epsilon":                    EPSILON,
+            "rmace_winsorized_ceiling":         RMACE_CEILING,
+            "mean_sharpness":                   mean_sharpness,
+            "overconfidence_rate":              float(np.mean([v["is_overconfident"] for v in vals])),
             "per_metric_agent_directional_acc": {k: v["agent_directional_correct"] for k, v in results.items()},
-            "per_metric_random_baseline_acc": {k: v["random_baseline_correct"] for k, v in results.items()}
+            "per_metric_random_baseline_acc":   {k: v["random_baseline_correct"]   for k, v in results.items()}
         }
     }

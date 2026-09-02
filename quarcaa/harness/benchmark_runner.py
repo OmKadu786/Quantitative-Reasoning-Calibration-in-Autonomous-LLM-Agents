@@ -179,7 +179,7 @@ def run_benchmark(pipeline, dataset_name: str, condition: str, instructions_fn, 
 
     agent = get_agent(args.model)
     runner = MultiSeedRunner(pipeline=pipeline, seeds=[42, 123, 999])
-    logger = TrialLogger(log_dir=f"logs/{dataset_name}_{condition}/raw_trials")
+    logger = TrialLogger(log_dir="logs")
 
     print("=" * 80)
     print(f"🚀 QUARCAA BENCHMARK — {dataset_name.upper()} / {condition.upper()}")
@@ -197,8 +197,8 @@ def run_benchmark(pipeline, dataset_name: str, condition: str, instructions_fn, 
         )
         all_run_records.append({"run_index": r, "trajectory": trajectory_records})
 
-    os.makedirs(f"logs/{dataset_name}_{condition}", exist_ok=True)
-    summary_file = f"logs/{dataset_name}_{condition}/summary_{args.model}.json"
+    os.makedirs("logs", exist_ok=True)
+    summary_file = f"logs/summary_{dataset_name}_{condition}_{args.model}.json"
     with open(summary_file, "w") as f:
         json.dump(all_run_records, f, indent=2)
 
