@@ -1,23 +1,174 @@
 """
-QuaRCAA MIT-BIH ECG Arrhythmia Inter-Patient Classification Pipeline
-Evaluates 5-class cardiology classification (N, SVEB/S, VEB/V, F, Q) under de Chazal split.
-Uses cost-sensitive weighting, risk shielding, and probability calibration multipliers.
-Computes full Precision and Recall metrics for N, S, V, F classes and Macro Precision/Recall/F1.
+QuaRCAA MIT-BIH Arrhythmia Classification Pipeline — REAL TRAINING
+Trains a real XGBoost classifier on extracted tabular features from the actual MIT-BIH database.
+Uses the de Chazal inter-patient split (DS1 train / DS2 test) per AAMI EC57 protocol.
+Each call to evaluate_single_seed() genuinely extracts features, trains, and evaluates.
+
+No synthetic formulas. No hand-crafted response surfaces.
+
+Feature set (tabular, lightweight):
+  - R-R interval statistics (pre/post beat, ratio, local mean)
+  - QRS morphology (duration, energy, peak amplitude)
+  - Beat type local context (previous beat class)
+
+Hyperparameters tuned:
+  - f_weight, s_weight, v_weight: class sample_weight multipliers for minority classes
+  - shield_threshold: post-hoc decision threshold for minority class promotion
+  - v_prob_multiplier, s_prob_multiplier, f_prob_multiplier: probability scaling per class
+
+5-Class AAMI mapping:
+  N → Normal / Bundle Branch Block (majority)
+  S → SVEB / Supraventricular ectopic (minority)
+  V → VEB / Ventricular ectopic (minority)
+  F → Fusion (minority, rarest)
+  Q → Unclassifiable (excluded from metrics)
 """
+import os
 import numpy as np
-from typing import Dict, Any
+import warnings
+from collections import defaultdict
+from sklearn.metrics import precision_score, recall_score, f1_score
+from sklearn.preprocessing import LabelEncoder
+import xgboost as xgb
+from typing import Dict, List, Tuple, Any
 from quarcaa.pipelines.base_pipeline import BasePipeline
 
+warnings.filterwarnings("ignore")
+
+try:
+    import wfdb
+    WFDB_AVAILABLE = True
+except ImportError:
+    WFDB_AVAILABLE = False
+
+# de Chazal inter-patient split (AAMI EC57 standard)
+DS1_RECORDS = [101, 106, 108, 109, 112, 114, 115, 116, 118, 119,
+               122, 124, 201, 203, 205, 207, 208, 209, 215, 220, 223, 230]
+DS2_RECORDS = [100, 103, 105, 111, 113, 117, 121, 123, 200, 202,
+               210, 212, 213, 214, 219, 221, 222, 228, 231, 232, 233, 234]
+
+# AAMI beat label mapping from MIT-BIH annotation symbols
+AAMI_MAP = {
+    "N": "N", "L": "N", "R": "N", "e": "N", "j": "N",
+    "A": "S", "a": "S", "J": "S", "S": "S",
+    "V": "V", "E": "V",
+    "F": "F",
+    "/": "Q", "f": "Q", "Q": "Q"
+}
+VALID_CLASSES = ["N", "S", "V", "F"]
+
+
+def extract_features_from_record(record_path: str) -> Tuple[np.ndarray, List[str]]:
+    """
+    Extracts tabular features from a single MIT-BIH record.
+    Returns feature matrix X and label list y (AAMI class strings).
+    """
+    record = wfdb.rdrecord(record_path)
+    annotation = wfdb.rdann(record_path, "atr")
+
+    signal = record.p_signal[:, 0]  # Lead II (MLII)
+    r_peaks = annotation.sample
+    symbols = annotation.symbol
+    fs = record.fs  # Sampling frequency (360 Hz)
+
+    features, labels = [], []
+
+    for i, (peak, sym) in enumerate(zip(r_peaks, symbols)):
+        aami_class = AAMI_MAP.get(sym, None)
+        if aami_class is None or aami_class == "Q":
+            continue
+
+        # R-R interval features
+        rr_pre  = (r_peaks[i] - r_peaks[i-1]) / fs if i > 0 else 0.0
+        rr_post = (r_peaks[i+1] - r_peaks[i]) / fs if i < len(r_peaks)-1 else rr_pre
+        rr_ratio = rr_pre / (rr_post + 1e-6)
+
+        local_rr = []
+        for j in range(max(0, i-4), min(len(r_peaks), i+5)):
+            if j > 0:
+                local_rr.append((r_peaks[j] - r_peaks[j-1]) / fs)
+        rr_local_mean = np.mean(local_rr) if local_rr else rr_pre
+        rr_local_std  = np.std(local_rr)  if local_rr else 0.0
+        rr_norm_pre   = rr_pre / (rr_local_mean + 1e-6)
+
+        # QRS morphology — 100ms window around R-peak
+        w = int(0.05 * fs)  # 50ms half-window (18 samples at 360Hz)
+        start = max(0, peak - w)
+        end   = min(len(signal), peak + w)
+        qrs = signal[start:end]
+
+        qrs_energy    = float(np.sum(qrs ** 2)) if len(qrs) > 0 else 0.0
+        qrs_peak_amp  = float(signal[peak]) if peak < len(signal) else 0.0
+        qrs_duration  = float(len(qrs)) / fs
+        qrs_mean      = float(np.mean(qrs)) if len(qrs) > 0 else 0.0
+        qrs_std       = float(np.std(qrs))  if len(qrs) > 0 else 0.0
+
+        # Previous beat class (context feature)
+        prev_class = AAMI_MAP.get(symbols[i-1], "N") if i > 0 else "N"
+        prev_is_N = float(prev_class == "N")
+        prev_is_V = float(prev_class == "V")
+        prev_is_S = float(prev_class == "S")
+
+        feat = [
+            rr_pre, rr_post, rr_ratio, rr_local_mean, rr_local_std, rr_norm_pre,
+            qrs_energy, qrs_peak_amp, qrs_duration, qrs_mean, qrs_std,
+            prev_is_N, prev_is_V, prev_is_S
+        ]
+        features.append(feat)
+        labels.append(aami_class)
+
+    return np.array(features, dtype=np.float32), labels
+
+
 class ECGArmyPipeline(BasePipeline):
-    def __init__(self, config_path: str = None):
-        self.config_path = config_path
+
+    def __init__(self, data_dir: str = "dataset/mit-bih-arrhythmia-database-1.0.0"):
+        if not WFDB_AVAILABLE:
+            raise ImportError("wfdb package required. Install with: pip install wfdb")
+        self.data_dir = data_dir
+        if not os.path.exists(data_dir):
+            raise FileNotFoundError(f"MIT-BIH database not found at '{data_dir}'.")
+
+        print("[ECGArmyPipeline] Extracting features from MIT-BIH records (one-time)...")
+        self.X_train, self.y_train = self._load_split(DS1_RECORDS, "DS1 (train)")
+        self.X_test,  self.y_test  = self._load_split(DS2_RECORDS, "DS2 (test)")
+        self.le = LabelEncoder().fit(VALID_CLASSES)
+        self.y_train_enc = self.le.transform(self.y_train)
+        self.y_test_enc  = self.le.transform(self.y_test)
+        print(f"[ECGArmyPipeline] Ready. Train: {len(self.y_train):,} beats | Test: {len(self.y_test):,} beats")
+        self._log_class_distribution("DS1 (train)", self.y_train)
+        self._log_class_distribution("DS2 (test)",  self.y_test)
+
+    def _load_split(self, record_ids: List[int], split_name: str) -> Tuple[np.ndarray, List[str]]:
+        all_X, all_y = [], []
+        loaded = 0
+        for rid in record_ids:
+            rpath = os.path.join(self.data_dir, str(rid))
+            if not os.path.exists(rpath + ".dat"):
+                continue
+            try:
+                X, y = extract_features_from_record(rpath)
+                all_X.append(X)
+                all_y.extend(y)
+                loaded += 1
+            except Exception as e:
+                print(f"  Warning: Could not load record {rid}: {e}")
+        print(f"  {split_name}: loaded {loaded}/{len(record_ids)} records")
+        return np.vstack(all_X), all_y
+
+    def _log_class_distribution(self, name: str, labels: List[str]):
+        counts = defaultdict(int)
+        for l in labels: counts[l] += 1
+        total = len(labels)
+        dist = {k: f"{v} ({100*v/total:.1f}%)" for k, v in sorted(counts.items())}
+        print(f"  {name} distribution: {dist}")
 
     def get_baseline_parameters(self) -> Dict[str, float]:
         return {
-            "shield_threshold": 0.50,
-            "v_weight": 1.0,
-            "s_weight": 1.0,
-            "f_weight": 1.0,
+            "shield_threshold":  0.50,
+            "v_weight":          1.0,
+            "s_weight":          1.0,
+            "f_weight":          1.0,
             "v_prob_multiplier": 1.00,
             "s_prob_multiplier": 1.00,
             "f_prob_multiplier": 1.00
@@ -25,14 +176,11 @@ class ECGArmyPipeline(BasePipeline):
 
     def evaluate_single_seed(self, hyperparameters: Dict[str, float], seed: int) -> Dict[str, float]:
         """
-        Executes single-seed training run.
-        Uses deterministic pseudorandom seed state to simulate/evaluate model training metric shifts.
-        All per-class metrics include independent seed noise for realistic cross-seed variance.
+        Trains a real XGBoost classifier on DS1 (22 patients) and evaluates on DS2 (22 patients).
+        Applies per-class sample weights and post-hoc probability multipliers.
+        Returns genuine empirical precision/recall/F1 per AAMI class.
         """
-        np.random.seed(seed)
-        
-        # Extract hyperparameters with fallback to un-tuned defaults
-        shield_thresh = float(hyperparameters.get("shield_threshold", 0.50))
+        shield_thresh  = float(hyperparameters.get("shield_threshold", 0.50))
         v_w = float(hyperparameters.get("v_weight", 1.0))
         s_w = float(hyperparameters.get("s_weight", 1.0))
         f_w = float(hyperparameters.get("f_weight", 1.0))
@@ -40,55 +188,69 @@ class ECGArmyPipeline(BasePipeline):
         s_mult = float(hyperparameters.get("s_prob_multiplier", 1.00))
         f_mult = float(hyperparameters.get("f_prob_multiplier", 1.00))
 
-        # Effect of loss weights and probability multipliers on recalls
-        f_gain = np.log1p(f_w) * 0.08 * (f_mult / 1.5)
-        s_gain = np.log1p(s_w) * 0.06 * (s_mult / 1.5)
-        v_gain = np.log1p(v_w) * 0.05 * (v_mult / 1.5)
-        
-        # Shield threshold effect (lower threshold increases minority recalls but drops precision & N recall)
-        thresh_effect = (0.50 - shield_thresh) * 0.15
-        
-        # Seed noise — ALL per-class metrics have independent seed noise for realistic 3-seed variance
-        seed_noise_f = np.random.normal(0.0, 0.015)
-        seed_noise_s = np.random.normal(0.0, 0.010)
-        seed_noise_v = np.random.normal(0.0, 0.008)
-        seed_noise_pf = np.random.normal(0.0, 0.010)
-        seed_noise_ps = np.random.normal(0.0, 0.008)
-        seed_noise_pv = np.random.normal(0.0, 0.007)
-        seed_noise_n  = np.random.normal(0.0, 0.005)
+        # Build per-sample class weights from AAMI minority weights
+        class_weight_map = {"N": 1.0, "S": s_w, "V": v_w, "F": f_w}
+        sample_weights = np.array([class_weight_map[c] for c in self.y_train], dtype=np.float32)
 
-        # Compute empirical Recalls
-        raw_recall_F = min(0.88, max(0.10, 0.20 + f_gain + thresh_effect + seed_noise_f))
-        raw_recall_S = min(0.92, max(0.40, 0.55 + s_gain + thresh_effect + seed_noise_s))
-        raw_recall_V = min(0.95, max(0.50, 0.65 + v_gain + thresh_effect + seed_noise_v))
-        raw_recall_N = min(0.98, max(0.50, 0.95 - (0.50 - shield_thresh) * 0.35 - 0.03 * (f_w - 1.0) - 0.02 * (s_w - 1.0) + seed_noise_n))
+        # Train real XGBoost on DS1
+        model = xgb.XGBClassifier(
+            n_estimators=150,
+            max_depth=6,
+            learning_rate=0.10,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            random_state=seed,
+            num_class=4,
+            objective="multi:softprob",
+            eval_metric="mlogloss",
+            verbosity=0,
+            use_label_encoder=False
+        )
+        model.fit(self.X_train, self.y_train_enc, sample_weight=sample_weights)
 
-        # Compute empirical Precisions (Precision drops as weights & thresholds aggressively push false positives)
-        raw_precision_F = min(0.85, max(0.05, 0.50 - np.log1p(f_w) * 0.09 - (0.50 - shield_thresh) * 0.25 + seed_noise_pf))
-        raw_precision_S = min(0.90, max(0.10, 0.65 - np.log1p(s_w) * 0.07 - (0.50 - shield_thresh) * 0.20 + seed_noise_ps))
-        raw_precision_V = min(0.92, max(0.20, 0.75 - np.log1p(v_w) * 0.05 - (0.50 - shield_thresh) * 0.15 + seed_noise_pv))
-        raw_precision_N = min(0.99, max(0.70, 0.96 - 0.01 * (f_w - 1.0) - 0.005 * (s_w - 1.0) + seed_noise_n * 0.5))
+        # Predict probabilities on DS2
+        probs = model.predict_proba(self.X_test)  # shape: (N, 4) — [F, N, S, V] alphabetical
 
-        # Macro averages (4-class: N, S, V, F — Q class excluded as it has near-zero prevalence in DS1)
-        macro_recall = (raw_recall_N + raw_recall_S + raw_recall_V + raw_recall_F) / 4.0
-        macro_precision = (raw_precision_N + raw_precision_S + raw_precision_V + raw_precision_F) / 4.0
-        
-        # Macro F1: pure harmonic mean of already-noisy per-class metrics (no extra noise term)
-        # This guarantees 2*P*R/(P+R) cross-check will always match the logged macro_f1 exactly
-        macro_f1 = (2.0 * macro_precision * macro_recall) / (macro_precision + macro_recall + 1e-6)
-        macro_f1 = min(0.88, max(0.35, macro_f1))
+        # Apply per-class probability multipliers
+        class_order = list(self.le.classes_)  # ['F','N','S','V']
+        mult_map = {"N": 1.0, "S": s_mult, "V": v_mult, "F": f_mult}
+        for ci, cls in enumerate(class_order):
+            probs[:, ci] *= mult_map[cls]
 
-        # FIX Issue 5: recall_V and precision_V now included in return dict
-        return {
-            "macro_f1": float(np.round(macro_f1, 4)),
-            "macro_precision": float(np.round(macro_precision, 4)),
-            "macro_recall": float(np.round(macro_recall, 4)),
-            "recall_F": float(np.round(raw_recall_F, 4)),
-            "precision_F": float(np.round(raw_precision_F, 4)),
-            "recall_S": float(np.round(raw_recall_S, 4)),
-            "precision_S": float(np.round(raw_precision_S, 4)),
-            "recall_V": float(np.round(raw_recall_V, 4)),
-            "precision_V": float(np.round(raw_precision_V, 4)),
-            "recall_N": float(np.round(raw_recall_N, 4)),
-            "precision_N": float(np.round(raw_precision_N, 4))
-        }
+        # Normalize probabilities after scaling
+        probs = probs / (probs.sum(axis=1, keepdims=True) + 1e-8)
+
+        # Shield threshold: promote any minority class prediction above shield_thresh
+        base_preds = np.argmax(probs, axis=1)
+        minority_classes = [i for i, c in enumerate(class_order) if c != "N"]
+        n_idx = class_order.index("N")
+
+        final_preds = base_preds.copy()
+        for mi in minority_classes:
+            promote_mask = (probs[:, mi] >= shield_thresh) & (base_preds == n_idx)
+            final_preds[promote_mask] = mi
+
+        # Compute per-class precision and recall
+        y_true = self.y_test_enc
+        results = {}
+        for ci, cls in enumerate(class_order):
+            if cls == "N":
+                continue  # computed below as macro complement
+            r = float(recall_score(y_true, final_preds, labels=[ci], average="macro", zero_division=0.0))
+            p = float(precision_score(y_true, final_preds, labels=[ci], average="macro", zero_division=0.0))
+            results[f"recall_{cls}"]    = float(np.round(r, 4))
+            results[f"precision_{cls}"] = float(np.round(p, 4))
+
+        # Normal class metrics
+        ni = class_order.index("N")
+        results["recall_N"]    = float(np.round(recall_score(y_true, final_preds, labels=[ni], average="macro", zero_division=0.0), 4))
+        results["precision_N"] = float(np.round(precision_score(y_true, final_preds, labels=[ni], average="macro", zero_division=0.0), 4))
+
+        macro_f1        = float(np.round(f1_score(y_true, final_preds, average="macro", zero_division=0.0), 4))
+        macro_precision = float(np.round(np.mean([results[f"precision_{c}"] for c in VALID_CLASSES]), 4))
+        macro_recall    = float(np.round(np.mean([results[f"recall_{c}"]    for c in VALID_CLASSES]), 4))
+
+        results["macro_f1"]        = macro_f1
+        results["macro_precision"] = macro_precision
+        results["macro_recall"]    = macro_recall
+        return results
