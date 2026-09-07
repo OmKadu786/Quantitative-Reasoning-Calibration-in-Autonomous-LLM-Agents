@@ -10,7 +10,7 @@ from quarcaa.prompts.template import get_system_prompt
 from quarcaa.harness.retry_handler import retry_with_exponential_backoff
 
 class ClaudeAgent(BaseAgent):
-    def __init__(self, model_name: str = "claude-3-5-sonnet-20241022", temperature: float = 0.2):
+    def __init__(self, model_name: str = "claude-sonnet-4-5", temperature: float = 0.2):
         super().__init__(model_name=model_name, temperature=temperature)
         self.api_key = os.getenv("ANTHROPIC_API_KEY")
 

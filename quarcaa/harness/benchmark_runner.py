@@ -121,21 +121,30 @@ def run_single_trajectory(
         print(f"        3-Seed Means: {actual_means}")
 
         prev_baseline = history_records[-1]["actual_means"] if history_records else baseline_metrics
+        prev_stds     = history_records[-1]["actual_stds"]  if history_records else baseline_stds
+        curr_stds     = eval_run["3seed_stds"]
+
         calib_result = compute_quarcaa_calibration(
             predictions=predictions,
             baseline_metrics=prev_baseline,
-            actual_3seed_metrics=actual_means
+            actual_3seed_metrics=actual_means,
+            baseline_stds=prev_stds,
+            actual_stds=curr_stds,
         )
         eval_run["calibration_diagnostic"] = calib_result
 
         summary_metrics = calib_result["summary"]
-        agent_acc = summary_metrics["agent_directional_accuracy_rate"] * 100.0
-        raw_mace = summary_metrics["mace"]
-        rmace_mean = summary_metrics["mean_relative_mace"]
-        rmace_med = summary_metrics["median_relative_mace"]
+        agent_acc        = summary_metrics["agent_directional_accuracy_rate"] * 100.0
+        signal_acc       = summary_metrics.get("signal_agent_directional_acc")
+        signal_acc_str   = f"{signal_acc*100:.0f}%" if signal_acc is not None else "N/A"
+        pct_signal       = summary_metrics.get("pct_detectable_signal_metrics", 0.0) * 100.0
+        raw_mace         = summary_metrics["mace"]
+        rmace_mean       = summary_metrics["mean_relative_mace"]
+        rmace_med        = summary_metrics["median_relative_mace"]
         rolling_mace_window.append(raw_mace)
 
-        print(f"  [4/4] Diagnostic -> MACE: {raw_mace:.4f} | RMACE (Mean/Med): {rmace_mean:.2f}/{rmace_med:.2f} | Agent Acc: {agent_acc:.1f}%")
+        print(f"  [4/4] MACE: {raw_mace:.4f} | RMACE: {rmace_mean:.2f}/{rmace_med:.2f} | "
+              f"Acc(all): {agent_acc:.0f}% | Acc(signal): {signal_acc_str} | Signal%: {pct_signal:.0f}%")
 
         full_trial_records.append({
             "trial_id": trial_id,
