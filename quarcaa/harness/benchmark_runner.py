@@ -24,6 +24,7 @@ load_dotenv()
 from quarcaa.agents.deepseek_agent import DeepSeekAgent
 from quarcaa.agents.gpt_agent import GPTAgent
 from quarcaa.agents.claude_agent import ClaudeAgent
+from quarcaa.agents.gemini_agent import GeminiAgent
 from quarcaa.harness.multi_seed_runner import MultiSeedRunner
 from quarcaa.harness.trial_logger import TrialLogger
 from quarcaa.schema.parser import extract_json_prediction
@@ -38,8 +39,10 @@ def get_agent(model_name: str):
         return GPTAgent()
     elif "claude" in m or "anthropic" in m:
         return ClaudeAgent()
+    elif "gemini" in m:
+        return GeminiAgent()
     else:
-        raise ValueError(f"Unknown model: {model_name}. Must be 'deepseek', 'gpt', or 'claude'.")
+        raise ValueError(f"Unknown model: {model_name}. Must be 'deepseek', 'gpt', 'claude', or 'gemini'.")
 
 
 def run_single_trajectory(
