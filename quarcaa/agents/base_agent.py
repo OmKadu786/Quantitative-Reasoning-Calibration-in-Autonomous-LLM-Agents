@@ -2,11 +2,18 @@
 QuaRCAA Abstract Agent Adapter Interface
 Defines standard API query method for all LLM agent adapters.
 """
+import os
+from pathlib import Path
 from abc import ABC, abstractmethod
 from typing import Dict, Any
 
+from dotenv import load_dotenv
+
+
 class BaseAgent(ABC):
     def __init__(self, model_name: str, temperature: float = 0.2):
+        repo_root = Path(__file__).resolve().parents[2]
+        load_dotenv(dotenv_path=repo_root / ".env", override=False)
         self.model_name = model_name
         self.temperature = temperature
 

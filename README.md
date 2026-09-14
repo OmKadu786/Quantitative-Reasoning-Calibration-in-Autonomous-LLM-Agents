@@ -17,20 +17,42 @@ QuaRCAA performs the **first empirical diagnostic evaluation** measuring the gap
 
 ## 🚀 Quick Start & Running Benchmarks
 
-### 1. Run Baseline Optimization Loop
-Execute the 15-iteration benchmark loop for DeepSeek R1, GPT-4o, or Claude 3.5:
+### 1. Install Dependencies
+
+From this directory:
+
+```bash
+python3 -m pip install -r requirements.txt
+```
+
+Create `.env` with the API key for the provider being run. The benchmark loads it from the project root.
+
+### 2. Run a Smoke Test
+
+Start with one run and one iteration. The runner fails fast on malformed responses, schema mismatches, incomplete metrics, and stale duplicate results:
+
+```bash
+python3 run_credit_c1.py --model deepseek --runs 1 --iterations 1
+python3 run_ecg_c1.py --model deepseek --runs 1 --iterations 1
+```
+
+### 3. Run the Final Optimization Loop
+
+Execute the 15-iteration benchmark loop for DeepSeek R1, GPT-4o, Claude, or Gemini:
 
 ```bash
 # DeepSeek R1 on MIT-BIH ECG Arrhythmia Pipeline
-python3 run_benchmark.py --model deepseek --dataset ecg --iterations 15
+python3 run_ecg_c1.py --model deepseek --runs 3 --iterations 15
 
 # DeepSeek R1 on Kaggle Credit Card Fraud Pipeline
-python3 run_benchmark.py --model deepseek --dataset credit --iterations 15
+python3 run_credit_c1.py --model deepseek --runs 3 --iterations 15
 
 # GPT-4o or Claude 3.5 Sonnet
-python3 run_benchmark.py --model gpt --dataset ecg --iterations 15
-python3 run_benchmark.py --model claude --dataset ecg --iterations 15
+python3 run_ecg_c1.py --model gpt --runs 3 --iterations 15
+python3 run_ecg_c1.py --model claude --runs 3 --iterations 15
 ```
+
+Use the corresponding `run_*_c2.py` and `run_*_c3.py` entrypoints for the other conditions. Do not aggregate old summaries unless they pass the provenance and completeness checks in `export_results.py`.
 
 ---
 

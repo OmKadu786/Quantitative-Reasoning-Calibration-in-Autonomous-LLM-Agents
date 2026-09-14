@@ -1,6 +1,7 @@
 import json
 import glob
 import os
+from quarcaa.harness.artifact_validation import validate_summary_artifact
 
 def generate_master_dump():
     files = sorted(glob.glob('logs/*/*/summary_*.json'))
@@ -10,9 +11,18 @@ def generate_master_dump():
         try:
             with open(f, 'r') as infile:
                 data = json.load(infile)
+
+            accepted, reason = validate_summary_artifact(data)
+            if not accepted:
+                print(f"Skipping {f}: {reason}")
+                continue
+
+            if f"{os.sep}gemini{os.sep}" in f:
+                print(f"Skipping {f}: Gemini excluded from published aggregate")
+                continue
             
             # f is like logs/claude/ecg/summary_ecg_c1_claude.json
-            parts = f.split('/')
+            parts = f.split(os.sep)
             model_fam = parts[1]
             dataset = parts[2]
             filename = parts[3]
@@ -56,7 +66,7 @@ def generate_master_dump():
         except Exception as e:
             print(f"Error processing {f}: {e}")
 
-    output_path = 'master_results_dump.json'
+    output_path = 'master_results.json'
     with open(output_path, 'w') as outfile:
         json.dump(master_data, outfile, indent=2)
     print(f"✅ Created {output_path} with {len(master_data)} completed conditions.")

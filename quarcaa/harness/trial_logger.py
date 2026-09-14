@@ -32,12 +32,12 @@ class TrialLogger:
             "total_iterations": len(trajectory_records),
             "iterations": trajectory_records
         }
-        
+
         timestamp_str = int(time.time())
         filename = f"{dataset_name}_{model_name}_run{run_idx:02d}_t{timestamp_str}.json"
         filepath = os.path.join(self.log_dir, filename)
-        
+
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(record, f, indent=2)
-            
+
         return filepath

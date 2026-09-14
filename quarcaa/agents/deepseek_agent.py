@@ -30,8 +30,15 @@ class DeepSeekAgent(BaseAgent):
             ],
             "temperature": self.temperature
         }
-        
+
         response = requests.post(f"{self.base_url}/chat/completions", headers=headers, json=payload, timeout=90)
         response.raise_for_status()
         data = response.json()
-        return data["choices"][0]["message"]["content"]
+        message = data["choices"][0]["message"]
+        reasoning = message.get("reasoning_content", "")
+        content = message.get("content", "")
+
+        # We inject the reasoning content inside XML tags so the trial logger saves it
+        if reasoning:
+            return f"<deepseek_thought>\n{reasoning}\n</deepseek_thought>\n\n{content}"
+        return content
