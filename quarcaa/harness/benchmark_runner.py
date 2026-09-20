@@ -1,17 +1,15 @@
 """
 QuaRCAA Shared Trajectory Runner — Core Harness
-Contains all shared logic used by all 6 condition-specific benchmark scripts.
+Contains all shared logic used by the condition-specific benchmark scripts.
 Do not run this file directly. Use the condition-specific scripts:
 
   ECG:
     python3 run_ecg_c1.py --model deepseek --runs 3 --iterations 15
     python3 run_ecg_c2.py --model deepseek --runs 3 --iterations 15
-    python3 run_ecg_c3.py --model deepseek --runs 3 --iterations 15
 
   Credit Fraud:
     python3 run_credit_c1.py --model deepseek --runs 3 --iterations 15
     python3 run_credit_c2.py --model deepseek --runs 3 --iterations 15
-    python3 run_credit_c3.py --model deepseek --runs 3 --iterations 15
 """
 import os
 import json
@@ -29,6 +27,7 @@ from quarcaa.agents.claude_agent import ClaudeAgent
 from quarcaa.agents.gemini_agent import GeminiAgent
 from quarcaa.harness.multi_seed_runner import MultiSeedRunner
 from quarcaa.harness.trial_logger import TrialLogger
+from quarcaa.harness.cost_tracker import CostTracker
 from quarcaa.schema.parser import extract_json_prediction
 from quarcaa.metrics.mace import compute_quarcaa_calibration
 
@@ -164,13 +163,13 @@ def run_single_trajectory(
     run_idx: int, num_iterations: int,
     dataset_name: str, condition: str,
     instructions_fn,           # callable(dataset_name, iteration, history) -> str
-    apply_c3_guard: bool = False
+    cost_tracker: CostTracker,
+    cost_file: str,
 ):
     """
     Core trajectory execution loop shared across all conditions.
     instructions_fn: function that returns the prompt instruction string.
-                     Allows C1/C2/C3 to inject different instruction text.
-    apply_c3_guard: if True, clamps parameter updates by 50% when rolling MACE > 0.15.
+                     Allows C1/C2 to inject different instruction text.
     """
     print(f"\n" + "=" * 60)
     print(f"🔄 [{condition.upper()}] TRAJECTORY RUN {run_idx:02d} ({num_iterations} Iterations)")
@@ -185,7 +184,6 @@ def run_single_trajectory(
 
     history_records = []
     full_trial_records = []
-    rolling_mace_window = []
 
     for i in range(1, num_iterations + 1):
         trial_id = f"r{run_idx:02d}_iter{i:02d}"
@@ -194,10 +192,13 @@ def run_single_trajectory(
         history_str = f"Iteration 0 (Baseline): Parameters = {current_params}, 3-Seed Means = {baseline_metrics}, 3-Seed Stds = {baseline_stds}\n"
         for idx, record in enumerate(history_records, 1):
             history_str += f"Iteration {idx}: Proposed = {record['proposed_params']}, 3-Seed Means = {record['actual_means']}, 3-Seed Stds = {record['actual_stds']}\n"
+            if condition == "c3" and record.get("feedback"):
+                history_str += f"Iteration {idx} Prediction Feedback: {record['feedback']}\n"
 
         instructions_str = instructions_fn(dataset_name, i, history_records)
 
         print(f"  [1/4] Querying {agent.model_name} API...")
+        cost_tracker.ensure_budget()
         try:
             raw_response, parsed_data, proposed_params, predictions = _get_validated_prediction(
                 agent, instructions_str, history_str, current_params, dataset_name
@@ -206,23 +207,10 @@ def run_single_trajectory(
             raise RuntimeError(f"API/schema query failed for {dataset_name} run {run_idx} iteration {i}: {e}") from e
 
         response_hash = _response_hash(str(raw_response))
+        api_usage = cost_tracker.record(agent.last_usage, instructions_str + "\n" + history_str, raw_response)
+        cost_tracker.write(cost_file)
 
         print("  [2/4] Parsing JSON predictions...")
-
-        # C3 Guard: clamp parameter updates by 50% if rolling MACE > 0.15
-        was_gated = False
-        gate_reason = "NONE"
-        if apply_c3_guard and rolling_mace_window:
-            rolling_mace = sum(rolling_mace_window[-3:]) / len(rolling_mace_window[-3:])
-            if rolling_mace > 0.15:
-                clamped = {}
-                for k, v in proposed_params.items():
-                    baseline_v = pipeline.get_baseline_parameters().get(k, v)
-                    clamped[k] = baseline_v + 0.5 * (v - baseline_v)
-                proposed_params = clamped
-                was_gated = True
-                gate_reason = f"C3_GUARD: rolling_mace={rolling_mace:.4f} > 0.15 threshold"
-                print(f"  ⚠️  C3 Guard TRIGGERED — parameter update clamped by 50%")
 
         print("  [3/4] Executing 3-Seed Pipeline Run ([42, 123, 999])...")
         eval_run = runner.run_multi_seed_evaluation(proposed_params)
@@ -264,7 +252,6 @@ def run_single_trajectory(
         raw_mace         = summary_metrics["mace"]
         rmace_mean       = summary_metrics["mean_relative_mace"]
         rmace_med        = summary_metrics["median_relative_mace"]
-        rolling_mace_window.append(raw_mace)
 
         print(f"  [4/4] MACE: {raw_mace:.4f} | RMACE: {rmace_mean:.2f}/{rmace_med:.2f} | "
               f"Acc(all): {agent_acc:.0f}% | Acc(signal): {signal_acc_str} | Signal%: {pct_signal:.0f}%")
@@ -279,8 +266,7 @@ def run_single_trajectory(
             "raw_response_text": raw_response,
             "parsed_json": parsed_data,
             "executed_hyperparameters": proposed_params,
-            "was_gated_by_c3": was_gated,
-            "gate_reason": gate_reason,
+            "api_usage": api_usage,
             "seed_metrics_summary": eval_run,
         })
 
@@ -292,6 +278,7 @@ def run_single_trajectory(
             "actual_stds": eval_run["3seed_stds"],
             "calibration": summary_metrics,
             "response_hash": response_hash,
+            "feedback": calib_result.get("metric_details", {}),
         })
         current_params = proposed_params
 
@@ -305,7 +292,7 @@ def run_single_trajectory(
     return history_records
 
 
-def run_benchmark(pipeline, dataset_name: str, condition: str, instructions_fn, apply_c3_guard: bool = False):
+def run_benchmark(pipeline, dataset_name: str, condition: str, instructions_fn):
     parser = argparse.ArgumentParser(description=f"QuaRCAA {dataset_name.upper()} {condition.upper()} Benchmark")
     parser.add_argument("--model", type=str, default="deepseek")
     parser.add_argument("--runs", type=int, default=3)
@@ -319,6 +306,10 @@ def run_benchmark(pipeline, dataset_name: str, condition: str, instructions_fn, 
     model_short = args.model.lower()
     log_dir = f"logs/{model_short}/{dataset_name}"
     logger = TrialLogger(log_dir=log_dir)
+    cost_tracker = CostTracker(model_name=agent.model_name)
+    cost_file = f"{log_dir}/cost_{dataset_name}_{condition}_{args.model}.json"
+    os.makedirs(log_dir, exist_ok=True)
+    cost_tracker.write(cost_file)
 
     print("=" * 80)
     print(f"🚀 QUARCAA BENCHMARK — {dataset_name.upper()} / {condition.upper()}")
@@ -334,7 +325,8 @@ def run_benchmark(pipeline, dataset_name: str, condition: str, instructions_fn, 
             run_idx=r, num_iterations=args.iterations,
             dataset_name=dataset_name, condition=condition,
             instructions_fn=instructions_fn,
-            apply_c3_guard=apply_c3_guard
+            cost_tracker=cost_tracker,
+            cost_file=cost_file
         )
         all_run_records.append({"run_index": r, "trajectory": trajectory_records})
 
@@ -342,7 +334,11 @@ def run_benchmark(pipeline, dataset_name: str, condition: str, instructions_fn, 
     with open(summary_file, "w") as f:
         json.dump(all_run_records, f, indent=2)
 
+    with open(cost_file, "w") as f:
+        json.dump(cost_tracker.summary(), f, indent=2)
+
     print("\n" + "=" * 80)
     print(f"✅ COMPLETED — {dataset_name.upper()} / {condition.upper()} ({args.runs} x {args.iterations} trials)")
     print(f"   Summary: {summary_file}")
+    print(f"   Estimated API cost: ${cost_tracker.total_cost_usd:.4f} | Cost log: {cost_file}")
     print("=" * 80)

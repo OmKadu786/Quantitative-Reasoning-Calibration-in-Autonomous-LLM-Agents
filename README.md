@@ -52,7 +52,14 @@ python3 run_ecg_c1.py --model gpt --runs 3 --iterations 15
 python3 run_ecg_c1.py --model claude --runs 3 --iterations 15
 ```
 
-Use the corresponding `run_*_c2.py` and `run_*_c3.py` entrypoints for the other conditions. Do not aggregate old summaries unless they pass the provenance and completeness checks in `export_results.py`.
+Use the corresponding `run_*_c2.py` entrypoints for the other validated condition. The new C3 feedback condition adds previous prediction-error feedback to the C2 prompt:
+
+```bash
+python3 run_credit_c3.py --model deepseek --runs 3 --iterations 15
+python3 run_ecg_c3.py --model deepseek --runs 3 --iterations 15
+```
+
+C3 writes a cumulative cost record to `logs/{model}/{dataset}/cost_{dataset}_c3_{model}.json`. The tracker records spend but does not enforce a dollar limit. Do not aggregate old summaries unless they pass the provenance and completeness checks in `export_results.py`.
 
 ---
 

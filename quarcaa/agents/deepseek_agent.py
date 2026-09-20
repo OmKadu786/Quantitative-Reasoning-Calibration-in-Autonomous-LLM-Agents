@@ -34,6 +34,7 @@ class DeepSeekAgent(BaseAgent):
         response = requests.post(f"{self.base_url}/chat/completions", headers=headers, json=payload, timeout=90)
         response.raise_for_status()
         data = response.json()
+        self.last_usage = self.normalize_usage(data)
         message = data["choices"][0]["message"]
         reasoning = message.get("reasoning_content", "")
         content = message.get("content", "")

@@ -30,6 +30,5 @@ if __name__ == "__main__":
         pipeline=CreditFraudPipeline(),
         dataset_name="credit",
         condition="c2",
-        instructions_fn=instructions_c2,
-        apply_c3_guard=False
+        instructions_fn=instructions_c2
     )

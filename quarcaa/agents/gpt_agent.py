@@ -33,4 +33,5 @@ class GPTAgent(BaseAgent):
         response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload, timeout=90)
         response.raise_for_status()
         data = response.json()
+        self.last_usage = self.normalize_usage(data)
         return data["choices"][0]["message"]["content"]

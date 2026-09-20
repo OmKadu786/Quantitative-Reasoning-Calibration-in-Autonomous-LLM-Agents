@@ -35,4 +35,5 @@ class ClaudeAgent(BaseAgent):
         response = requests.post("https://api.anthropic.com/v1/messages", headers=headers, json=payload, timeout=90)
         response.raise_for_status()
         data = response.json()
+        self.last_usage = self.normalize_usage(data)
         return data["content"][0]["text"]

@@ -26,6 +26,5 @@ if __name__ == "__main__":
         pipeline=ECGArmyPipeline(),
         dataset_name="ecg",
         condition="c1",
-        instructions_fn=instructions_c1,
-        apply_c3_guard=False
+        instructions_fn=instructions_c1
     )

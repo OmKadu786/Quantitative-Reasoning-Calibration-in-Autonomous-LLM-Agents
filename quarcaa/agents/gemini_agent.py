@@ -37,6 +37,7 @@ class GeminiAgent(BaseAgent):
         # We catch explicit errors to prevent silent fails
         response.raise_for_status()
         data = response.json()
+        self.last_usage = self.normalize_usage(data)
         
         # Parse standard Gemini response structure
         try:
